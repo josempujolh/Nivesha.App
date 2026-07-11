@@ -4,6 +4,7 @@ import pandas as pd
 import json
 import requests
 import os
+import textwrap  # Nuevo import para formatear el texto
 
 # ============================================
 # CONFIGURATION
@@ -12,6 +13,7 @@ st.set_page_config(page_title="Nivesha", page_icon="logo.png", layout="wide")
 WATCHLIST_FILE = "my_watchlist.json"
 AV_KEY = "V8TXR4IBIMTJCFNB"
 AV_URL = "https://www.alphavantage.co/query"
+
 # ============================================
 # WATCHLIST MANAGEMENT
 # ============================================
@@ -56,7 +58,18 @@ def get_data_av(sym):
         df_cf = pd.DataFrame(d_cf, index=[col1]).T
         df_bs[col2] = [float(bs[1].get("totalCurrentAssets", 0) or 0), float(bs[1].get("totalCurrentLiabilities", 0) or 0), float(bs[1].get("inventory", 0) or 0), 0, 0, 0, float(bs[1].get("totalShareholderEquity", 0) or 0), float(bs[1].get("totalAssets", 0) or 0)]
         df_inc[col2] = ["", "", ""]
-        info = {"shortName": info_av.get("Name", sym), "sector": info_av.get("Sector", "Unknown"), "currentPrice": float(quote.get("05. price", 0)) if quote.get("05. price") else None, "sharesOutstanding": float(info_av.get("SharesOutstanding", 0)) if info_av.get("SharesOutstanding") else None, "marketCap": float(info_av.get("MarketCapitalization", 0)) if info_av.get("MarketCapitalization") else None}
+        
+        # Obtener descripción de la empresa (Alpha Vantage no proporciona una descripción directa)
+        description = "No description available for this company."
+        
+        info = {
+            "shortName": info_av.get("Name", sym), 
+            "sector": info_av.get("Sector", "Unknown"), 
+            "description": description,  # Nueva línea para la descripción
+            "currentPrice": float(quote.get("05. price", 0)) if quote.get("05. price") else None, 
+            "sharesOutstanding": float(info_av.get("SharesOutstanding", 0)) if info_av.get("SharesOutstanding") else None, 
+            "marketCap": float(info_av.get("MarketCapitalization", 0)) if info_av.get("MarketCapitalization") else None
+        }
         return {"inc": df_inc, "bs": df_bs, "cf": df_cf, "info": info}
     except Exception as e: 
         return str(e) # This will now show us the exact error message
@@ -65,7 +78,12 @@ def get_data_av(sym):
 def get_data(symbol):
     try:
         t = yf.Ticker(symbol)
-        return {"inc": t.income_stmt, "bs": t.balance_sheet, "cf": t.cash_flow, "info": t.info}
+        # Obtener información de Yahoo Finance
+        info = t.info
+        # Asegurarnos de incluir la descripción
+        if "description" not in info:
+            info["description"] = "No description available for this company."
+        return {"inc": t.income_stmt, "bs": t.balance_sheet, "cf": t.cash_flow, "info": info}
     except:
         av_data = get_data_av(symbol)
         if av_data == "RATE_LIMIT":
@@ -198,6 +216,26 @@ def get_simple_verdicts(ratios):
     v["total_score"] = max(0, min(100, int((safety_score + profit_score + value_score) / 3)))
     return v
 
+# Nueva función para formatear la descripción a un máximo de 5 líneas
+def format_description(description, max_lines=5, max_chars_per_line=80):
+    if not description or description == "No description available for this company.":
+        return description
+    
+    # Eliminar espacios en blanco innecesarios
+    description = ' '.join(description.split())
+    
+    # Dividir en líneas
+    lines = textwrap.wrap(description, width=max_chars_per_line)
+    
+    # Limitar al número máximo de líneas
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        # Asegurarse de que la última línea termine con puntos suspensivos
+        if not lines[-1].endswith('...'):
+            lines[-1] = lines[-1][:-3] + '...' if len(lines[-1]) > 3 else '...'
+    
+    return '\n'.join(lines)
+
 # ============================================
 # UI DISPLAY FUNCTION (NO HTML, 100% SAFE)
 # ============================================
@@ -211,13 +249,19 @@ def display_stock_card(symbol):
     score = verdicts["total_score"]
     name = info.get("shortName", symbol)
     sector = info.get("sector", "Unknown Sector")
+    description = info.get("description", "No description available for this company.")
     price = info.get("currentPrice") or info.get("regularMarketPrice")
+    
+    # Formatear la descripción
+    formatted_description = format_description(description)
     
     # Header: Name and Price side-by-side
     col_name, col_price = st.columns([3, 1])
     with col_name:
         st.subheader(f"{name}")
         st.caption(f"Sector: {sector}")
+        # Nueva línea para mostrar la descripción
+        st.caption(formatted_description)
     with col_price:
         if price:
             st.metric(label="Current Price", value=f"${price:.2f}")
