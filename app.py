@@ -4,7 +4,7 @@ import pandas as pd
 import json
 import requests
 import os
-import textwrap  # Nuevo import para formatear el texto
+import textwrap
 
 # ============================================
 # CONFIGURATION
@@ -23,7 +23,7 @@ def load_watchlist():
             with open(WATCHLIST_FILE, "r") as f: 
                 return json.load(f)
     except:
-        pass # If file is broken, just start fresh
+        pass
     return []
 
 def save_watchlist(wl):
@@ -31,10 +31,31 @@ def save_watchlist(wl):
         with open(WATCHLIST_FILE, "w") as f: 
             json.dump(wl, f)
     except:
-        pass # Ignores the error when running on the internet
+        pass
 
 if "watchlist" not in st.session_state:
     st.session_state.watchlist = load_watchlist()
+
+# ============================================
+# FUNCIÓN AUXILIAR: Obtener descripción de Yahoo Finance
+# ============================================
+def get_company_description(symbol):
+    """Obtiene la descripción de la empresa directamente de Yahoo Finance"""
+    try:
+        t = yf.Ticker(symbol)
+        info = t.info
+        # Yahoo Finance usa estos campos para la descripción (en orden de preferencia)
+        description = (
+            info.get("longBusinessSummary") or 
+            info.get("businessSummary") or 
+            info.get("description") or 
+            None
+        )
+        if description:
+            return description
+    except:
+        pass
+    return None
 
 # ============================================
 # BACKEND: ALL 13 RATIOS
@@ -59,37 +80,36 @@ def get_data_av(sym):
         df_bs[col2] = [float(bs[1].get("totalCurrentAssets", 0) or 0), float(bs[1].get("totalCurrentLiabilities", 0) or 0), float(bs[1].get("inventory", 0) or 0), 0, 0, 0, float(bs[1].get("totalShareholderEquity", 0) or 0), float(bs[1].get("totalAssets", 0) or 0)]
         df_inc[col2] = ["", "", ""]
         
-        # Obtener descripción de la empresa (Alpha Vantage no proporciona una descripción directa)
-        description = "No description available for this company."
+        # Intentar obtener descripción de Yahoo Finance (aunque usemos Alpha Vantage para los datos financieros)
+        description = get_company_description(sym)
         
         info = {
             "shortName": info_av.get("Name", sym), 
             "sector": info_av.get("Sector", "Unknown"), 
-            "description": description,  # Nueva línea para la descripción
+            "description": description,  # Ahora usa la función auxiliar
             "currentPrice": float(quote.get("05. price", 0)) if quote.get("05. price") else None, 
             "sharesOutstanding": float(info_av.get("SharesOutstanding", 0)) if info_av.get("SharesOutstanding") else None, 
             "marketCap": float(info_av.get("MarketCapitalization", 0)) if info_av.get("MarketCapitalization") else None
         }
         return {"inc": df_inc, "bs": df_bs, "cf": df_cf, "info": info}
     except Exception as e: 
-        return str(e) # This will now show us the exact error message
+        return str(e)
 
 @st.cache_data(ttl=3600)
 def get_data(symbol):
     try:
         t = yf.Ticker(symbol)
-        # Obtener información de Yahoo Finance
         info = t.info
-        # Asegurarnos de incluir la descripción
+        # Yahoo Finance usa "longBusinessSummary" para la descripción
         if "description" not in info:
-            info["description"] = "No description available for this company."
+            info["description"] = info.get("longBusinessSummary") or info.get("businessSummary") or None
         return {"inc": t.income_stmt, "bs": t.balance_sheet, "cf": t.cash_flow, "info": info}
     except:
         av_data = get_data_av(symbol)
         if av_data == "RATE_LIMIT":
             st.warning("🛑 Daily limit reached! You used your 5 free checks for today. They reset at midnight US Eastern Time.")
             st.stop()
-        if isinstance(av_data, str): # If it's a string, it's an error message!
+        if isinstance(av_data, str):
             st.error(f"Debug Error: {av_data}")
             st.stop()
         if not av_data:
@@ -101,7 +121,6 @@ def sget(df, idx, col):
     try:
         if idx in df.index and col in df.columns:
             v = df.loc[idx, col]
-            # Fix Yahoo Finance glitch: force it to pick the first valid number if it sends messy data
             if isinstance(v, pd.Series):
                 v = v.dropna().iloc[0]
             return float(v) if pd.notna(v) else None
@@ -216,10 +235,10 @@ def get_simple_verdicts(ratios):
     v["total_score"] = max(0, min(100, int((safety_score + profit_score + value_score) / 3)))
     return v
 
-# Nueva función para formatear la descripción a un máximo de 5 líneas
-def format_description(description, max_lines=5, max_chars_per_line=80):
-    if not description or description == "No description available for this company.":
-        return description
+def format_description(description, max_lines=5, max_chars_per_line=85):
+    """Formatea la descripción a un máximo de 5 líneas"""
+    if not description:
+        return None  # Devuelve None en lugar de un mensaje de error
     
     # Eliminar espacios en blanco innecesarios
     description = ' '.join(description.split())
@@ -249,10 +268,10 @@ def display_stock_card(symbol):
     score = verdicts["total_score"]
     name = info.get("shortName", symbol)
     sector = info.get("sector", "Unknown Sector")
-    description = info.get("description", "No description available for this company.")
+    description = info.get("description") or info.get("longBusinessSummary")  # Doble intento
     price = info.get("currentPrice") or info.get("regularMarketPrice")
     
-    # Formatear la descripción
+    # Formatear la descripción (devuelve None si no hay descripción)
     formatted_description = format_description(description)
     
     # Header: Name and Price side-by-side
@@ -260,8 +279,9 @@ def display_stock_card(symbol):
     with col_name:
         st.subheader(f"{name}")
         st.caption(f"Sector: {sector}")
-        # Nueva línea para mostrar la descripción
-        st.caption(formatted_description)
+        # Solo mostrar la descripción si existe
+        if formatted_description:
+            st.caption(formatted_description)
     with col_price:
         if price:
             st.metric(label="Current Price", value=f"${price:.2f}")
@@ -363,7 +383,6 @@ def main():
             with st.expander("🤓 Geek Mode: View exact 13 financial ratios"):
                 ratios, _ = calc_all_13_ratios(symbol_input.strip().upper())
                 if ratios:
-                    # Your personalized explanations and optimal ranges
                     guides = {
                         "Current Ratio": "Should be between 1.5 and 2.0, indicating financial health.",
                         "Quick Ratio": "Should be ≥ 1.0, ensuring short-term solvency.",
@@ -380,7 +399,6 @@ def main():
                         "P/BV Ratio": "< 1 Below book value | 1-3 Standard | > 5 High (tech/intangibles)."
                     }
                     
-                    # Create the table
                     ratio_df = pd.DataFrame.from_dict(ratios, orient='index', columns=['Value'])
                     ratio_df.index.name = "Ratio"
                     ratio_df['Unit'] = ratio_df.index.map(lambda x: "%" if x in ["ROE", "Net Margin"] else "x")
