@@ -5,6 +5,7 @@ import json
 import requests
 import os
 import textwrap
+import random  # Nuevo import para frases aleatorias
 
 # ============================================
 # CONFIGURATION
@@ -13,6 +14,55 @@ st.set_page_config(page_title="Nivesha", page_icon="logo.png", layout="wide")
 WATCHLIST_FILE = "my_watchlist.json"
 AV_KEY = "V8TXR4IBIMTJCFNB"
 AV_URL = "https://www.alphavantage.co/query"
+
+# ============================================
+# FRASES DE INSPIRACIÓN DE INVERSORES
+# ============================================
+INVESTOR_QUOTES = [
+    ("Warren Buffett", "El precio es lo que pagas. El valor es lo que recibes."),
+    ("Warren Buffett", "Sé temeroso cuando los demás son codiciosos, y codicioso cuando los demás son temerosos."),
+    ("Warren Buffett", "Nunca pierdas dinero. Regla número dos: Nunca olvides la regla número uno."),
+    ("Warren Buffett", "Nuestra inversión favorita es un negocio excelente con un management excelente a un precio razonable."),
+    ("Warren Buffett", "Si no encuentras una forma de ganar dinero mientras duermes, trabajarás hasta el día que mueras."),
+    ("Warren Buffett", "El riesgo viene de no saber lo que estás haciendo."),
+    ("Warren Buffett", "Alguien está sentado a la sombra hoy porque alguien plantó un árbol hace mucho tiempo."),
+    ("Charlie Munger", "Muestra a un idiota rico y te mostraré un hombre que cometió errores de inversión."),
+    ("Charlie Munger", "La primera regla de la composición: nunca la interrumpas innecesariamente."),
+    ("Charlie Munger", "No es una injusticia que los que obtienen buenos resultados reciban más que los que no."),
+    ("Charlie Munger", "Todo lo que necesitas es un par de buenas inversiones en tu vida para volverte rico."),
+    ("Charlie Munger", "La gente calcula demasiado y piensa muy poco."),
+    ("Peter Lynch", "Conoce lo que posees."),
+    ("Peter Lynch", "Detrás de cada acción hay una empresa. Descubre qué está haciendo."),
+    ("Peter Lynch", "El mercado de valores está lleno de individuos que conocen el precio de todo, pero el valor de nada."),
+    ("Peter Lynch", "Invierte en lo que conoces."),
+    ("Peter Lynch", "Las acciones lejanas no pueden besarte."),
+    ("Peter Lynch", "Si no puedes encontrar al menos tres razones para comprar una acción, no la compres."),
+    ("Benjamin Graham", "El inversor inteligente es realista; espera resultados satisfactorios, no extraordinarios."),
+    ("Benjamin Graham", "La verdadera inversión requiere un margen de seguridad."),
+    ("Benjamin Graham", "El mercado es un aparato para transferir dinero de los impacientes a los pacientes."),
+    ("Benjamin Graham", "El inversor individual no debería dejarse guiar por el mercado, sino por el valor intrínseco."),
+    ("John Bogle", "No busques la aguja en el pajar. Compra el pajar."),
+    ("John Bogle", "El mayor enemigo del inversor son sus propias emociones."),
+    ("John Bogle", "El tiempo es tu amigo, el impulso es tu enemigo."),
+    ("Ray Dalio", "La diversificación es la única luncheon gratis que existe en inversiones."),
+    ("Ray Dalio", "La peor cosa que puedes hacer es no aceptar la realidad tal como es."),
+    ("Ray Dalio", "El dolor + la reflexión = progreso."),
+    ("George Soros", "No es importante si tienes razón o equivocado. Lo importante es cuánto ganas cuando tienes razón y cuánto pierdes cuando te equivocas."),
+    ("George Soros", "Las finanzas son una fuerza muy poderosa, pero no es más que un medio a un fin."),
+    ("Philip Fisher", "El mercado de acciones está lleno de individuos que conocen el precio de todo, pero el valor de nada."),
+    ("Philip Fisher", "Si has hecho tu investigación bien, la mayoría de las acciones no necesitan ser vendidas nunca."),
+    ("Nassim Taleb", "Los inversores que buscan seguridad en las acciones están en el lugar equivocado."),
+    ("Nassim Taleb", "Aprende a vivir con la incertidumbre, no contra ella."),
+    ("Jesse Livermore", "El dinero se hace sentándose, no operando."),
+    ("Jesse Livermore", "Los mercados nunca están equivocados; las opiniones sí lo están."),
+    ("Carlos Slim", "La competencia te hace mejor, siempre y cuando no te mate."),
+    ("Carlos Slim", "Cuando hay una crisis es cuando surgen las oportunidades."),
+]
+
+def get_random_quote():
+    """Devuelve una frase aleatoria de un inversor famoso"""
+    author, quote = random.choice(INVESTOR_QUOTES)
+    return author, quote
 
 # ============================================
 # WATCHLIST MANAGEMENT
@@ -44,7 +94,6 @@ def get_company_description(symbol):
     try:
         t = yf.Ticker(symbol)
         info = t.info
-        # Yahoo Finance usa estos campos para la descripción (en orden de preferencia)
         description = (
             info.get("longBusinessSummary") or 
             info.get("businessSummary") or 
@@ -80,13 +129,12 @@ def get_data_av(sym):
         df_bs[col2] = [float(bs[1].get("totalCurrentAssets", 0) or 0), float(bs[1].get("totalCurrentLiabilities", 0) or 0), float(bs[1].get("inventory", 0) or 0), 0, 0, 0, float(bs[1].get("totalShareholderEquity", 0) or 0), float(bs[1].get("totalAssets", 0) or 0)]
         df_inc[col2] = ["", "", ""]
         
-        # Intentar obtener descripción de Yahoo Finance (aunque usemos Alpha Vantage para los datos financieros)
         description = get_company_description(sym)
         
         info = {
             "shortName": info_av.get("Name", sym), 
             "sector": info_av.get("Sector", "Unknown"), 
-            "description": description,  # Ahora usa la función auxiliar
+            "description": description,
             "currentPrice": float(quote.get("05. price", 0)) if quote.get("05. price") else None, 
             "sharesOutstanding": float(info_av.get("SharesOutstanding", 0)) if info_av.get("SharesOutstanding") else None, 
             "marketCap": float(info_av.get("MarketCapitalization", 0)) if info_av.get("MarketCapitalization") else None
@@ -100,7 +148,6 @@ def get_data(symbol):
     try:
         t = yf.Ticker(symbol)
         info = t.info
-        # Yahoo Finance usa "longBusinessSummary" para la descripción
         if "description" not in info:
             info["description"] = info.get("longBusinessSummary") or info.get("businessSummary") or None
         return {"inc": t.income_stmt, "bs": t.balance_sheet, "cf": t.cash_flow, "info": info}
@@ -238,25 +285,20 @@ def get_simple_verdicts(ratios):
 def format_description(description, max_lines=5, max_chars_per_line=85):
     """Formatea la descripción a un máximo de 5 líneas"""
     if not description:
-        return None  # Devuelve None en lugar de un mensaje de error
+        return None
     
-    # Eliminar espacios en blanco innecesarios
     description = ' '.join(description.split())
-    
-    # Dividir en líneas
     lines = textwrap.wrap(description, width=max_chars_per_line)
     
-    # Limitar al número máximo de líneas
     if len(lines) > max_lines:
         lines = lines[:max_lines]
-        # Asegurarse de que la última línea termine con puntos suspensivos
         if not lines[-1].endswith('...'):
             lines[-1] = lines[-1][:-3] + '...' if len(lines[-1]) > 3 else '...'
     
     return '\n'.join(lines)
 
 # ============================================
-# UI DISPLAY FUNCTION (NO HTML, 100% SAFE)
+# UI DISPLAY FUNCTION
 # ============================================
 def display_stock_card(symbol):
     ratios, info = calc_all_13_ratios(symbol)
@@ -264,14 +306,16 @@ def display_stock_card(symbol):
         st.error(f"Could not find data for {symbol}. Did you type the ticker correctly?")
         return
     
+    # Obtener frase inspiradora
+    quote_author, quote_text = get_random_quote()
+    
     verdicts = get_simple_verdicts(ratios)
     score = verdicts["total_score"]
     name = info.get("shortName", symbol)
     sector = info.get("sector", "Unknown Sector")
-    description = info.get("description") or info.get("longBusinessSummary")  # Doble intento
+    description = info.get("description") or info.get("longBusinessSummary")
     price = info.get("currentPrice") or info.get("regularMarketPrice")
     
-    # Formatear la descripción (devuelve None si no hay descripción)
     formatted_description = format_description(description)
     
     # Header: Name and Price side-by-side
@@ -279,7 +323,6 @@ def display_stock_card(symbol):
     with col_name:
         st.subheader(f"{name}")
         st.caption(f"Sector: {sector}")
-        # Solo mostrar la descripción si existe
         if formatted_description:
             st.caption(formatted_description)
     with col_price:
@@ -316,6 +359,11 @@ def display_stock_card(symbol):
         if "Great" in v_verdict: st.success(f"**{v_emoji} PRICE VALUE**\n\n### {v_verdict}\n{v_text}")
         elif "Fair" in v_verdict: st.warning(f"**{v_emoji} PRICE VALUE**\n\n### {v_verdict}\n{v_text}")
         else: st.error(f"**{v_emoji} PRICE VALUE**\n\n### {v_verdict}\n{v_text}")
+    
+    st.markdown("---")
+    
+    # Frase inspiradora al final de la tarjeta
+    st.info(f"💡 **{quote_author}**: *\"{quote_text}\"*")
 
 # ============================================
 # MAIN APP UI
