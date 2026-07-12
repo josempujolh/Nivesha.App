@@ -5,7 +5,7 @@ import json
 import requests
 import os
 import textwrap
-import random  # Nuevo import para frases aleatorias
+import random 
 
 # ============================================
 # CONFIGURATION
@@ -241,9 +241,9 @@ def get_simple_verdicts(ratios):
     if ratios.get("Debt/Equity", 100) <= 0.5: safety_score += 25
     elif ratios.get("Debt/Equity", 100) <= 1.5: safety_score += 10
     
-    if safety_score >= 70: v["safety"] = ("🛡️", "Very Safe", "Strong financial fortress. Easily pays short-term bills and has low debt.")
-    elif safety_score >= 40: v["safety"] = ("🟡", "Normal Risk", "Financial health is okay. Can pay bills, but keep an eye on debt levels.")
-    else: v["safety"] = ("⚠️", "Risky", "Warning: Low cash or high debt. Might struggle if the economy turns bad.")
+    if safety_score >= 70: v["safety"] = ("🛡️", "Muy Segura", "Esta empresa es una fortaleza financiera. Tiene mucho más efectivo y activos a corto plazo que deudas, lo que significa que no tendrá problemas para pagar sus facturas incluso si la economía se detiene. Además, su nivel de deuda es muy bajo comparado con su propio capital. Es un negocio altamente estable que puede soportar crisis sin riesgo de quiebra.")
+    elif safety_score >= 40: v["safety"] = ("🟡", "Riesgo Normal", "La salud financiera está bien. Puede pagar sus obligaciones actuales sin despeinarse, pero no tiene un colchón de seguridad enorme. Si hay una recesión o un problema inesperado, podría sentir presión. La deuda está en niveles aceptables, pero no es tan sólida como para estar completamente blindada contra tormentas económicas prolongadas.")
+    else: v["safety"] = ("⚠️", "Riesgosa", "Precaución: Esta empresa está caminando sobre hielo delgado. No tiene suficiente efectivo para cubrir sus deudas a corto plazo con facilidad. Si las ventas caen o los bancos aprietan las condiciones, podría tener serios problemas de liquidez. El nivel de deuda es alto, lo que magnifica los riesgos y podría llevarla a situaciones críticas en tiempos difíciles.")
 
     profit_score = 0
     if ratios.get("ROE", 0) >= 15: profit_score += 35
@@ -254,9 +254,9 @@ def get_simple_verdicts(ratios):
     if ratios.get("Assets Turnover", 0) >= 0.5: profit_score += 30
     elif ratios.get("Assets Turnover", 0) >= 0.25: profit_score += 15
     
-    if profit_score >= 70: v["profit"] = ("💰", "Highly Profitable", "Excellent! Very efficient at turning sales into actual cash profit.")
-    elif profit_score >= 40: v["profit"] = ("👍", "Making Money", "Solidly profitable, though not an absolute superstar yet.")
-    else: v["profit"] = ("📉", "Struggling", "Having trouble making money. Might be growing fast on purpose, or just struggling.")
+    if profit_score >= 70: v["profit"] = ("💰", "Muy Rentable", "¡Excelente rendimiento! Esta empresa es una máquina de hacer dinero. Convierte una gran parte de sus ventas en ganancias reales y utiliza sus activos de manera extremadamente eficiente para generar valor a los accionistas. No solo vende mucho, sino que sabe retener una montaña de efectivo después de pagar todos sus gastos operativos.")
+    elif profit_score >= 40: v["profit"] = ("👍", "Gana Dinero", "El negocio es rentable y funciona de manera sana. Está ganando dinero, lo cual es lo principal, pero aún hay margen de mejora. Puede que sus márgenes de ganancia sean moderados o que no esté utilizando todos sus activos al máximo potencial. Es un barco que avanza a buen ritmo, aunque todavía no es un velero de máxima competición.")
+    else: v["profit"] = ("📉", "Con Dificultades", "Esta empresa está teniendo problemas serios para ser rentable. Sus gastos son casi tan altos como sus ingresos, dejando muy poco (o nada) de ganancia neta. Esto podría deberse a que está invirtiendo agresivamente para crecer, pero si no es así, simplemente tiene un modelo de negocio con costos demasiado elevados para lo que genera.")
 
     value_score = 0
     pe, ps, pbv = ratios.get("P/E Ratio", 100), ratios.get("P/S Ratio", 100), ratios.get("P/BV Ratio", 100)
@@ -275,9 +275,9 @@ def get_simple_verdicts(ratios):
     elif 1.5 < pbv <= 3: value_score += 15
     elif pbv > 6: value_score -= 5
 
-    if value_score >= 70: v["value"] = ("🎁", "Great Value", "Bargain! Stock price is low compared to profits and assets.")
-    elif value_score >= 30: v["value"] = ("💲", "Fair Price", "Reasonable price. Not a steal, but not a rip-off either.")
-    else: v["value"] = ("🚀", "Expensive", "Paying a premium. Investors expect massive growth. If it slows, price could drop.")
+    if value_score >= 70: v["value"] = ("🎁", "Gran Oportunidad", "¡Estás mirando una ganga potencial! El precio de la acción es muy bajo en comparación con las ganancias que genera y el valor real de sus activos. El mercado parece estar subestimando a esta empresa. Comprar a estos precios te da un gran 'margen de seguridad', lo que limita tu riesgo si baja más, pero ofrece grandes ganancias si el mercado corrige su error.")
+    elif value_score >= 30: v["value"] = ("💲", "Precio Justo", "El precio es razonable. No estás comprando a precio de remate, pero tampoco te están estafando. Los múltiplos financieros están en niveles normales. Estás pagando lo que la empresa vale razonablemente hoy. Para ganar dinero aquí, dependerás de que la empresa logre hacer crecer sus ventas y ganancias de forma constante en los próximos años.")
+    else: v["value"] = ("🚀", "Precio Premium", "Estás pagando una prima muy alta por esta acción. Los inversores están asumiendo que esta empresa va a crecer a pasos agigantados, por lo que han disparado su precio. Si la empresa cumple esas altísimas expectativas, genial. Pero si el crecimiento se desacelera aunque sea un poco, el precio de la acción podría caer de forma drástica.")
 
     v["total_score"] = max(0, min(100, int((safety_score + profit_score + value_score) / 3)))
     return v
@@ -344,21 +344,21 @@ def display_stock_card(symbol):
     
     with col1:
         s_emoji, s_verdict, s_text = verdicts["safety"]
-        if "Very" in s_verdict: st.success(f"**{s_emoji} SAFETY**\n\n### {s_verdict}\n{s_text}")
-        elif "Normal" in s_verdict: st.warning(f"**{s_emoji} SAFETY**\n\n### {s_verdict}\n{s_text}")
-        else: st.error(f"**{s_emoji} SAFETY**\n\n### {s_verdict}\n{s_text}")
+        if "Muy" in s_verdict: st.success(f"**{s_emoji} SEGURIDAD**\n\n### {s_verdict}\n{s_text}")
+        elif "Normal" in s_verdict: st.warning(f"**{s_emoji} SEGURIDAD**\n\n### {s_verdict}\n{s_text}")
+        else: st.error(f"**{s_emoji} SEGURIDAD**\n\n### {s_verdict}\n{s_text}")
         
     with col2:
         p_emoji, p_verdict, p_text = verdicts["profit"]
-        if "Highly" in p_verdict: st.success(f"**{p_emoji} PROFITABILITY**\n\n### {p_verdict}\n{p_text}")
-        elif "Making" in p_verdict: st.warning(f"**{p_emoji} PROFITABILITY**\n\n### {p_verdict}\n{p_text}")
-        else: st.error(f"**{p_emoji} PROFITABILITY**\n\n### {p_verdict}\n{p_text}")
+        if "Muy" in p_verdict: st.success(f"**{p_emoji} RENTABILIDAD**\n\n### {p_verdict}\n{p_text}")
+        elif "Gana" in p_verdict: st.warning(f"**{p_emoji} RENTABILIDAD**\n\n### {p_verdict}\n{p_text}")
+        else: st.error(f"**{p_emoji} RENTABILIDAD**\n\n### {p_verdict}\n{p_text}")
         
     with col3:
         v_emoji, v_verdict, v_text = verdicts["value"]
-        if "Great" in v_verdict: st.success(f"**{v_emoji} PRICE VALUE**\n\n### {v_verdict}\n{v_text}")
-        elif "Fair" in v_verdict: st.warning(f"**{v_emoji} PRICE VALUE**\n\n### {v_verdict}\n{v_text}")
-        else: st.error(f"**{v_emoji} PRICE VALUE**\n\n### {v_verdict}\n{v_text}")
+        if "Gran" in v_verdict: st.success(f"**{v_emoji} VALOR DE PRECIO**\n\n### {v_verdict}\n{v_text}")
+        elif "Justo" in v_verdict: st.warning(f"**{v_emoji} VALOR DE PRECIO**\n\n### {v_verdict}\n{v_text}")
+        else: st.error(f"**{v_emoji} VALOR DE PRECIO**\n\n### {v_verdict}\n{v_text}")
     
     st.markdown("---")
     
