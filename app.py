@@ -5,7 +5,10 @@ import json
 import requests
 import os
 import textwrap
-import random 
+import random
+import sqlite3
+import hashlib
+import secrets
 
 # ============================================
 # CONFIGURATION
@@ -14,13 +17,91 @@ st.set_page_config(page_title="Nivesha", page_icon="logo.png", layout="wide")
 WATCHLIST_FILE = "my_watchlist.json"
 AV_KEY = "V8TXR4IBIMTJCFNB"
 AV_URL = "https://www.alphavantage.co/query"
+DB_FILE = "nivesha_users.db"
 
-# Inicializar idioma por defecto (Inglés)
 if "lang" not in st.session_state:
     st.session_state.lang = "en"
 
+# Avatar options
+AVATARS = [
+    "👨", "👱‍♂️", "👨‍🦱", "🧔", "👨‍🦲", # Hombres
+    "👩", "👩‍🦰", "👩‍🦱",              # Mujeres
+    "🧑", "🧑‍🦰", "🧑‍🦱"               # Neutros
+]
+
 # ============================================
-# DICCIONARIO DE TRADUCCIONES (i18n)
+# DATABASE & AUTH SYSTEM
+# ============================================
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS users
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  email TEXT UNIQUE NOT NULL,
+                  password TEXT NOT NULL,
+                  first_name TEXT DEFAULT '',
+                  last_name TEXT DEFAULT '',
+                  avatar TEXT DEFAULT '🧑',
+                  is_premium BOOLEAN DEFAULT 0)''')
+    
+    # Si el usuario ya tenía la app, añadimos las nuevas columnas sin borrar lo anterior
+    try: c.execute("ALTER TABLE users ADD COLUMN first_name TEXT DEFAULT ''")
+    except: pass
+    try: c.execute("ALTER TABLE users ADD COLUMN last_name TEXT DEFAULT ''")
+    except: pass
+    try: c.execute("ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT '🧑'")
+    except: pass
+            
+    conn.commit()
+    conn.close()
+
+def hash_password(password):
+    salt = secrets.token_hex(16)
+    hash_obj = hashlib.sha256((password + salt).encode())
+    return f"{salt}${hash_obj.hexdigest()}"
+
+def verify_password(password, hashed_password):
+    salt, hashed = hashed_password.split('$')
+    hash_obj = hashlib.sha256((password + salt).encode())
+    return hash_obj.hexdigest() == hashed
+
+def register_user(email, password, first_name, last_name, avatar):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        hashed_pw = hash_password(password)
+        c.execute("INSERT INTO users (email, password, first_name, last_name, avatar) VALUES (?, ?, ?, ?, ?)", 
+                  (email, hashed_pw, first_name, last_name, avatar))
+        conn.commit()
+        conn.close()
+        return True
+    except sqlite3.IntegrityError:
+        return False
+
+def authenticate_user(email, password):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT id, password, is_premium, first_name, last_name, avatar FROM users WHERE email = ?", (email,))
+    user = c.fetchone()
+    conn.close()
+    if user and verify_password(password, user[1]):
+        return {
+            "id": user[0], "email": email, "is_premium": bool(user[2]),
+            "first_name": user[3], "last_name": user[4], "avatar": user[5]
+        }
+    return None
+
+init_db()
+
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+    st.session_state.user_data = None
+
+if "selected_avatar" not in st.session_state:
+    st.session_state.selected_avatar = "🧑"
+
+# ============================================
+# TRADUCCIONES
 # ============================================
 T = {
     "app_subtitle": {"en": "Is it a good investment? Let's find out in plain English.", "es": "¿Es una buena inversión? Descubrámoslo en palabras simples."},
@@ -59,139 +140,111 @@ T = {
     "debug_err": {"en": "Debug Error: {err}", "es": "Error de Depuración: {err}"},
     "no_data_av": {"en": "Could not find data for this stock.", "es": "No se pudieron encontrar datos para esta acción."},
     "na": {"en": "N/A", "es": "N/D"},
-
-    # Títulos de tarjetas
     "safety": {"en": "SAFETY", "es": "SEGURIDAD"},
     "profitability": {"en": "PROFITABILITY", "es": "RENTABILIDAD"},
     "price_value": {"en": "PRICE VALUE", "es": "VALOR DE PRECIO"},
+    "logout": {"en": "🚪 Logout", "es": "🚪 Cerrar Sesión"},
+    
+    # Auth
+    "auth_title": {"en": "Welcome to Nivesha", "es": "Bienvenido a Nivesha"},
+    "auth_subtitle": {"en": "Log in or create an account to continue.", "es": "Inicia sesión o crea una cuenta para continuar."},
+    "login_tab": {"en": "🔐 Login", "es": "🔐 Iniciar Sesión"},
+    "register_tab": {"en": "📝 Register", "es": "📝 Registrarse"},
+    "email": {"en": "Email", "es": "Correo Electrónico"},
+    "password": {"en": "Password", "es": "Contraseña"},
+    "first_name": {"en": "First Name", "es": "Nombre"},
+    "last_name": {"en": "Last Name", "es": "Apellido"},
+    "login_btn": {"en": "Login", "es": "Entrar"},
+    "register_btn": {"en": "Create Account", "es": "Crear Cuenta"},
+    "err_user_exists": {"en": "This email is already registered.", "es": "Este correo ya está registrado."},
+    "err_invalid_creds": {"en": "Invalid email or password.", "es": "Correo o contraseña incorrectos."},
+    "reg_success": {"en": "Account created successfully! Please log in.", "es": "¡Cuenta creada exitosamente! Por favor inicia sesión."},
+    "choose_avatar": {"en": "Choose your Avatar", "es": "Elige tu Avatar"},
+    
+    # Free Version Notice
+    "free_notice_title": {"en": "👋 Welcome to the Free Beta!", "es": "¡Bienvenido a la Beta Gratuita!"},
+    "free_notice_text": {"en": "You are currently using the Free version. You will have to upgrade to Premium to analyze unlimited stocks, use Versus Mode, and keep your personalized Watchlist soon.", "es": "Actualmente estás usando la versión Gratuita. Próximamente deberás actualizar a Premium para analizar acciones ilimitadas, usar el Modo Versus y guardar tu Watchlist personalizada."},
+    "pay_btn_soon": {"en": "💳 Upgrade to Premium - $2/month (Coming Soon)", "es": "💳 Mejorar a Premium - $2/mes (Próximamente)"},
 
-    # Veredictos de Seguridad
+    # Veredictos
     "very_safe": {"en": "Very Safe", "es": "Muy Segura"},
     "very_safe_t": {"en": "This company is a financial fortress. It has much more cash and short-term assets than debts, meaning it won't struggle to pay bills even if the economy stops. Its debt level is very low compared to its equity. It's a highly stable business that can withstand crises without bankruptcy risk.", "es": "Esta empresa es una fortaleza financiera. Tiene mucho más efectivo y activos a corto plazo que deudas, lo que significa que no tendrá problemas para pagar sus facturas incluso si la economía se detiene. Además, su nivel de deuda es muy bajo comparado con su propio capital. Es un negocio altamente estable que puede soportar crisis sin riesgo de quiebra."},
     "normal_risk": {"en": "Normal Risk", "es": "Riesgo Normal"},
     "normal_risk_t": {"en": "Financial health is okay. It can pay current obligations without sweating, but doesn't have a massive safety cushion. If there's a recession, it might feel pressure. Debt is at acceptable levels, but not solid enough to be completely shielded from prolonged economic storms.", "es": "La salud financiera está bien. Puede pagar sus obligaciones actuales sin despeinarse, pero no tiene un colchón de seguridad enorme. Si hay una recesión o un problema inesperado, podría sentir presión. La deuda está en niveles aceptables, pero no es tan sólida como para estar completamente blindada contra tormentas económicas prolongadas."},
     "risky": {"en": "Risky", "es": "Riesgosa"},
     "risky_t": {"en": "Caution: This company is walking on thin ice. It doesn't have enough cash to easily cover short-term debts. If sales drop or banks tighten conditions, it could face serious liquidity problems. Debt levels are high, magnifying risks and potentially leading to critical situations in tough times.", "es": "Precaución: Esta empresa está caminando sobre hielo delgado. No tiene suficiente efectivo para cubrir sus deudas a corto plazo con facilidad. Si las ventas caen o los bancos aprietan las condiciones, podría tener serios problemas de liquidez. El nivel de deuda es alto, lo que magnifica los riesgos y podría llevarla a situaciones críticas en tiempos difíciles."},
-
-    # Veredictos de Rentabilidad
     "highly_profitable": {"en": "Highly Profitable", "es": "Muy Rentable"},
     "highly_profitable_t": {"en": "Excellent performance! This company is a money-making machine. It converts a huge portion of its sales into real profits and uses its assets extremely efficiently to generate shareholder value. It doesn't just sell a lot; it knows how to retain a mountain of cash after paying all operating expenses.", "es": "¡Excelente rendimiento! Esta empresa es una máquina de hacer dinero. Convierte una gran parte de sus ventas en ganancias reales y utiliza sus activos de manera extremadamente eficiente para generar valor a los accionistas. No solo vende mucho, sino que sabe retener una montaña de efectivo después de pagar todos sus gastos operativos."},
     "making_money": {"en": "Making Money", "es": "Gana Dinero"},
     "making_money_t": {"en": "The business is profitable and operates healthily. It's making money, which is the main thing, but there's still room for improvement. Profit margins might be moderate, or it might not be using all assets to full potential. It's a ship moving at a good pace, though not yet a top-tier racing sailboat.", "es": "El negocio es rentable y funciona de manera sana. Está ganando dinero, lo cual es lo principal, pero aún hay margen de mejora. Puede que sus márgenes de ganancia sean moderados o que no esté utilizando todos sus activos al máximo potencial. Es un barco que avanza a buen ritmo, aunque todavía no es un velero de máxima competición."},
     "struggling": {"en": "Struggling", "es": "Con Dificultades"},
     "struggling_t": {"en": "This company is having serious trouble being profitable. Its expenses are almost as high as its revenue, leaving very little (or zero) net profit. This could be because it's investing aggressively to grow, but if not, it simply has a business model with costs too high for what it generates.", "es": "Esta empresa está teniendo problemas serios para ser rentable. Sus gastos son casi tan altos como sus ingresos, dejando muy poco (o nada) de ganancia neta. Esto podría deberse a que está invirtiendo agresivamente para crecer, pero si no es así, simplemente tiene un modelo de negocio con costos demasiado elevados para lo que genera."},
-
-    # Veredictos de Valor
     "great_value": {"en": "Great Value", "es": "Gran Oportunidad"},
     "great_value_t": {"en": "You're looking at a potential bargain! The stock price is very low compared to the profits it generates and the real value of its assets. The market seems to be underestimating this company. Buying at these prices gives you a great 'margin of safety', limiting downside risk while offering huge gains if the market corrects its mistake.", "es": "¡Estás mirando una ganga potencial! El precio de la acción es muy bajo en comparación con las ganancias que genera y el valor real de sus activos. El mercado parece estar subestimando a esta empresa. Comprar a estos precios te da un gran 'margen de seguridad', lo que limita tu riesgo si baja más, pero ofrece grandes ganancias si el mercado corrige su error."},
     "fair_price": {"en": "Fair Price", "es": "Precio Justo"},
     "fair_price_t": {"en": "The price is reasonable. You aren't buying at a fire sale, but you aren't being ripped off either. Financial multiples are at normal levels. You are paying what the company is reasonably worth today. To make money here, you'll rely on the company managing to consistently grow its sales and profits in the coming years.", "es": "El precio es razonable. No estás comprando a precio de remate, pero tampoco te están estafando. Los múltiplos financieros están en niveles normales. Estás pagando lo que la empresa vale razonablemente hoy. Para ganar dinero aquí, dependerás de que la empresa logre hacer crecer sus ventas y ganancias de forma constante en los próximos años."},
     "expensive": {"en": "Expensive", "es": "Precio Premium"},
     "expensive_t": {"en": "You are paying a very high premium for this stock. Investors are assuming this company will grow by leaps and bounds, driving its price up. If the company meets those sky-high expectations, great. But if growth slows even a little, the stock price could drop drastically.", "es": "Estás pagando una prima muy alta por esta acción. Los inversores están asumiendo que esta empresa va a crecer a pasos agigantados, por lo que han disparado su precio. Si la empresa cumple esas altísimas expectativas, genial. Pero si el crecimiento se desacelera aunque sea un poco, el precio de la acción podría caer de forma drástica."},
-
-    # Geek Mode Guías
-    "guide_current": {"en": "Should be between 1.5 and 2.0, indicating financial health.", "es": "Debe estar entre 1.5 y 2.0, indicando salud financiera."},
-    "guide_quick": {"en": "Should be ≥ 1.0, ensuring short-term solvency.", "es": "Debe ser ≥ 1.0, asegurando solvencia a corto plazo."},
-    "guide_cash": {"en": "Should be between 0.5 and 1, indicating a safe level.", "es": "Debe estar entre 0.5 y 1, indicando un nivel seguro."},
-    "guide_debt": {"en": "Should be < 0.5, meaning it relies more on own capital than debt.", "es": "Debe ser < 0.5, significando que confía más en capital propio que en deuda."},
-    "guide_inventory_t": {"en": "Should be > 2 and < 9, indicating good turnover.", "es": "Debe ser > 2 y < 9, indicando una buena rotación."},
-    "guide_days_inv": {"en": "The lower the better for liquidity and turnover.", "es": "Cuanto más bajo, mejor para la liquidez y rotación."},
-    "guide_assets_t": {"en": "> 1.2x is strong for mature companies. < 0.8x reflects inefficiency.", "es": "> 1.2x es fuerte para empresas maduras. < 0.8x refleja ineficiencia."},
-    "guide_roe": {"en": "< 10% Low | 10-15% Acceptable | > 15% Excellent efficiency.", "es": "< 10% Bajo | 10-15% Aceptable | > 15% Excelente eficiencia."},
-    "guide_margin": {"en": "< 5% Risky | 10% Healthy | > 20% Highly Profitable.", "es": "< 5% Riesgoso | 10% Saludable | > 20% Muy Rentable."},
-    "guide_pe": {"en": "0-10 Undervalued (or trap) | 10-20 Ideal | 20+ Overvalued/Growth.", "es": "0-10 Infravalorado (o trampa) | 10-20 Ideal | 20+ Sobrevalorado/Crecimiento."},
-    "guide_pcf": {"en": "< 10 Undervalued | 10-15 Healthy | > 20 Overvalued.", "es": "< 10 Infravalorado | 10-15 Saludable | > 20 Sobrevalorado."},
-    "guide_ps": {"en": "< 1.0 Very attractive | < 2.0 Healthy.", "es": "< 1.0 Muy atractivo | < 2.0 Saludable."},
-    "guide_pbv": {"en": "< 1 Below book value | 1-3 Standard | > 5 High (tech/intangibles).", "es": "< 1 Por debajo del valor en libros | 1-3 Estándar | > 5 Alto (tech/intangibles)."}
+    "guide_current": {"en": "1.5 to 2.0 is ideal.", "es": "1.5 a 2.0 es ideal."},
+    "guide_quick": {"en": "Should be ≥ 1.0.", "es": "Debe ser ≥ 1.0."},
+    "guide_cash": {"en": "0.5 to 1 is safe.", "es": "0.5 a 1 es seguro."},
+    "guide_debt": {"en": "Should be < 0.5.", "es": "Debe ser < 0.5."},
+    "guide_inventory_t": {"en": "> 2 and < 9 is good.", "es": "> 2 y < 9 es bueno."},
+    "guide_days_inv": {"en": "Lower is better.", "es": "Más bajo es mejor."},
+    "guide_assets_t": {"en": "> 1.2x is strong.", "es": "> 1.2x es fuerte."},
+    "guide_roe": {"en": "> 15% Excellent.", "es": "> 15% Excelente."},
+    "guide_margin": {"en": "> 20% Highly Profitable.", "es": "> 20% Muy Rentable."},
+    "guide_pe": {"en": "10-20 Ideal.", "es": "10-20 Ideal."},
+    "guide_pcf": {"en": "10-15 Healthy.", "es": "10-15 Saludable."},
+    "guide_ps": {"en": "< 2.0 Healthy.", "es": "< 2.0 Saludable."},
+    "guide_pbv": {"en": "1-3 Standard.", "es": "1-3 Estándar."},
 }
 
-# ============================================
-# FRASES DE INSPIRACIÓN (Bilingüe)
-# ============================================
 INVESTOR_QUOTES_EN = [
     ("Warren Buffett", "Price is what you pay. Value is what you get."),
-    ("Warren Buffett", "Be fearful when others are greedy, and greedy when others are fearful."),
-    ("Warren Buffett", "Rule No. 1: Never lose money. Rule No. 2: Never forget Rule No. 1."),
-    ("Warren Buffett", "Our favorite holding period is forever."),
-    ("Charlie Munger", "Show me the incentive and I will show you the outcome."),
-    ("Charlie Munger", "The first rule of compounding: Never interrupt it unnecessarily."),
     ("Peter Lynch", "Know what you own."),
-    ("Peter Lynch", "Behind every stock is a company. Find out what it's doing."),
-    ("Peter Lynch", "The stock market is full of individuals who know the price of everything, but the value of nothing."),
-    ("Benjamin Graham", "The intelligent investor is a realist who sells to optimists and buys from pessimists."),
-    ("Benjamin Graham", "The market is a device for transferring money from the impatient to the patient."),
-    ("John Bogle", "Don't look for the needle in the haystack. Just buy the haystack."),
-    ("John Boggle", "Time is your friend, impulse is your enemy."),
-    ("Ray Dalio", "Diversification is the only free lunch in investing."),
-    ("George Soros", "It's not whether you're right or wrong that's important, but how much money you make when you're right and how much you lose when you're wrong."),
-    ("Jesse Livermore", "Money is made by sitting, not trading."),
-    ("Carlos Slim", "Competition makes you better, always, as long as it doesn't kill you."),
+    ("Charlie Munger", "Show me the incentive and I will show you the outcome.")
 ]
-
 INVESTOR_QUOTES_ES = [
     ("Warren Buffett", "El precio es lo que pagas. El valor es lo que recibes."),
-    ("Warren Buffett", "Sé temeroso cuando los demás son codiciosos, y codicioso cuando los demás son temerosos."),
-    ("Warren Buffett", "Nunca pierdas dinero. Regla número dos: Nunca olvides la regla número uno."),
-    ("Warren Buffett", "Nuestro periodo de inversión favorito es para siempre."),
-    ("Charlie Munger", "Muéstrame el incentivo y te mostraré el resultado."),
-    ("Charlie Munger", "La primera regla de la composición: nunca la interrumpas innecesariamente."),
     ("Peter Lynch", "Conoce lo que posees."),
-    ("Peter Lynch", "Detrás de cada acción hay una empresa. Descubre qué está haciendo."),
-    ("Peter Lynch", "El mercado de valores está lleno de individuos que conocen el precio de todo, pero el valor de nada."),
-    ("Benjamin Graham", "El inversor inteligente es un realista que vende a los optimistas y compra a los pesimistas."),
-    ("Benjamin Graham", "El mercado es un aparato para transferir dinero de los impacientes a los pacientes."),
-    ("John Bogle", "No busques la aguja en el pajar. Compra el pajar."),
-    ("John Bogle", "El tiempo es tu amigo, el impulso es tu enemigo."),
-    ("Ray Dalio", "La diversificación es la única comida gratis que existe en inversiones."),
-    ("George Soros", "No es importante si tienes razón o equivocado. Lo importante es cuánto ganas cuando tienes razón y cuánto pierdes cuando te equivocas."),
-    ("Jesse Livermore", "El dinero se hace sentándose, no operando."),
-    ("Carlos Slim", "La competencia te hace mejor, siempre y cuando no te mate."),
+    ("Charlie Munger", "Muéstrame el incentivo y te mostraré el resultado.")
 ]
 
 def get_random_quote(lang):
-    if lang == "es":
-        return random.choice(INVESTOR_QUOTES_ES)
+    if lang == "es": return random.choice(INVESTOR_QUOTES_ES)
     return random.choice(INVESTOR_QUOTES_EN)
 
 def t(key):
-    """Función auxiliar para obtener traducción rápida"""
     return T[key][st.session_state.lang]
 
 # ============================================
-# WATCHLIST MANAGEMENT
+# WATCHLIST
 # ============================================
 def load_watchlist():
     try:
         if os.path.exists(WATCHLIST_FILE):
-            with open(WATCHLIST_FILE, "r") as f: 
-                return json.load(f)
-    except:
-        pass
+            with open(WATCHLIST_FILE, "r") as f: return json.load(f)
+    except: pass
     return []
 
 def save_watchlist(wl):
     try:
-        with open(WATCHLIST_FILE, "w") as f: 
-            json.dump(wl, f)
-    except:
-        pass
+        with open(WATCHLIST_FILE, "w") as f: json.dump(wl, f)
+    except: pass
 
 if "watchlist" not in st.session_state:
     st.session_state.watchlist = load_watchlist()
 
 # ============================================
-# BACKEND: OBTENER DESCRIPCIÓN
+# BACKEND DATA
 # ============================================
 def get_company_description(symbol):
     try:
         info = yf.Ticker(symbol).info
         return info.get("longBusinessSummary") or info.get("businessSummary") or None
-    except:
-        return None
+    except: return None
 
-# ============================================
-# BACKEND: ALL 13 RATIOS
-# ============================================
 def get_data_av(sym):
     try:
         inc_resp = requests.get(AV_URL, params={"function": "INCOME_STATEMENT", "symbol": sym, "apikey": AV_KEY}).json()
@@ -211,81 +264,60 @@ def get_data_av(sym):
         df_cf = pd.DataFrame(d_cf, index=[col1]).T
         df_bs[col2] = [float(bs[1].get("totalCurrentAssets", 0) or 0), float(bs[1].get("totalCurrentLiabilities", 0) or 0), float(bs[1].get("inventory", 0) or 0), 0, 0, 0, float(bs[1].get("totalShareholderEquity", 0) or 0), float(bs[1].get("totalAssets", 0) or 0)]
         df_inc[col2] = ["", "", ""]
-        
         info = {
-            "shortName": info_av.get("Name", sym), 
-            "sector": info_av.get("Sector", "Unknown"), 
+            "shortName": info_av.get("Name", sym), "sector": info_av.get("Sector", "Unknown"), 
             "description": get_company_description(sym),
             "currentPrice": float(quote.get("05. price", 0)) if quote.get("05. price") else None, 
             "sharesOutstanding": float(info_av.get("SharesOutstanding", 0)) if info_av.get("SharesOutstanding") else None, 
             "marketCap": float(info_av.get("MarketCapitalization", 0)) if info_av.get("MarketCapitalization") else None
         }
         return {"inc": df_inc, "bs": df_bs, "cf": df_cf, "info": info}
-    except Exception as e: 
-        return str(e)
+    except Exception as e: return str(e)
 
 @st.cache_data(ttl=3600)
 def get_data(symbol):
     try:
         ticker = yf.Ticker(symbol)
         info = ticker.info
-        if "description" not in info:
-            info["description"] = info.get("longBusinessSummary") or info.get("businessSummary") or None
+        if "description" not in info: info["description"] = info.get("longBusinessSummary") or None
         return {"inc": ticker.income_stmt, "bs": ticker.balance_sheet, "cf": ticker.cash_flow, "info": info}
     except:
         av_data = get_data_av(symbol)
-        if av_data == "RATE_LIMIT":
-            st.warning(t("rate_limit"))
-            st.stop()
-        if isinstance(av_data, str):
-            st.error(t("debug_err").format(err=av_data))
-            st.stop()
-        if not av_data:
-            st.error(t("no_data_av"))
-            st.stop()
+        if av_data == "RATE_LIMIT": st.warning(t("rate_limit")); st.stop()
+        if isinstance(av_data, str): st.error(t("debug_err").format(err=av_data)); st.stop()
+        if not av_data: st.error(t("no_data_av")); st.stop()
         return av_data
 
 def sget(df, idx, col):
     try:
         if idx in df.index and col in df.columns:
             v = df.loc[idx, col]
-            if isinstance(v, pd.Series):
-                v = v.dropna().iloc[0]
+            if isinstance(v, pd.Series): v = v.dropna().iloc[0]
             return float(v) if pd.notna(v) else None
-    except: 
-        pass
+    except: pass
     return None
 
 def calc_all_13_ratios(sym):
     d = get_data(sym)
     if len(d["inc"].columns) < 2: return None, d["info"]
-    
     info = d["info"]
     col, pcol = d["inc"].columns[0], d["inc"].columns[1]
-    
-    tca = sget(d["bs"], "Total Current Assets", col) or sget(d["bs"], "Total current assets", col) or sget(d["bs"], "Current Assets", col)
-    tcl = sget(d["bs"], "Total Current Liabilities", col) or sget(d["bs"], "Total current liabilities", col) or sget(d["bs"], "Current Liabilities", col)
-    inv = sget(d["bs"], "Inventory", col) or sget(d["bs"], "Inventories", col) or 0
-    cash = sget(d["bs"], "Cash And Cash Equivalents", col) or sget(d["bs"], "Cash", col) or sget(d["bs"], "Cash and cash equivalents", col)
+    tca = sget(d["bs"], "Total Current Assets", col) or sget(d["bs"], "Current Assets", col)
+    tcl = sget(d["bs"], "Total Current Liabilities", col) or sget(d["bs"], "Current Liabilities", col)
+    inv = sget(d["bs"], "Inventory", col) or 0
+    cash = sget(d["bs"], "Cash And Cash Equivalents", col) or sget(d["bs"], "Cash", col)
     td = (sget(d["bs"], "Short Term Debt", col) or 0) + (sget(d["bs"], "Long Term Debt", col) or 0)
-    te = sget(d["bs"], "Stockholders Equity", col) or sget(d["bs"], "Common Stock Equity", col) or sget(d["bs"], "Stockholders' Equity", col)
-    ta = sget(d["bs"], "Total Assets", col) or sget(d["bs"], "Total assets", col)
-    pta = sget(d["bs"], "Total Assets", pcol) or sget(d["bs"], "Total assets", pcol)
-    
-    rev = sget(d["inc"], "Total Revenue", col) or sget(d["inc"], "Revenue", col)
-    cogs = sget(d["inc"], "Cost Of Revenue", col) or sget(d["inc"], "Cost Of Goods Sold", col) or sget(d["inc"], "Cost of Revenue", col)
-    ni = sget(d["inc"], "Net Income", col) or sget(d["inc"], "Net Income Common Stockholders", col) or sget(d["inc"], "Net income", col)
-    
-    ocf = sget(d["cf"], "Operating Cash Flow", col) or sget(d["cf"], "Cash Flow From Continuing Operating Activities", col)
-    
-    p_inv = sget(d["bs"], "Inventory", pcol) or sget(d["bs"], "Inventories", pcol) or 0
-    avg_inv = (inv + p_inv) / 2
-    avg_ta = ((ta or 0) + (pta or 0)) / 2
-    
+    te = sget(d["bs"], "Stockholders Equity", col) or sget(d["bs"], "Stockholders' Equity", col)
+    ta = sget(d["bs"], "Total Assets", col); pta = sget(d["bs"], "Total Assets", pcol)
+    rev = sget(d["inc"], "Total Revenue", col)
+    cogs = sget(d["inc"], "Cost Of Revenue", col) or sget(d["inc"], "Cost of Revenue", col)
+    ni = sget(d["inc"], "Net Income", col)
+    ocf = sget(d["cf"], "Operating Cash Flow", col)
+    p_inv = sget(d["bs"], "Inventory", pcol) or 0
+    avg_inv = (inv + p_inv) / 2; avg_ta = ((ta or 0) + (pta or 0)) / 2
     price = info.get("currentPrice") or info.get("regularMarketPrice")
     shares = info.get("sharesOutstanding")
     if not shares and price and info.get("marketCap"): shares = info["marketCap"] / price
-    
     r = {}
     if tca and tcl and tcl != 0: r["Current Ratio"] = tca/tcl
     if tca and tcl and tcl != 0: r["Quick Ratio"] = (tca - inv)/tcl
@@ -300,14 +332,11 @@ def calc_all_13_ratios(sym):
     if price and ocf and shares and (ocf/shares) != 0: r["P/CF Ratio"] = price/(ocf/shares)
     if price and rev and shares and (rev/shares) != 0: r["P/S Ratio"] = price/(rev/shares)
     if price and te and shares and (te/shares) != 0: r["P/BV Ratio"] = price/(te/shares)
-    
     return r, info
 
 def get_simple_verdicts(ratios):
-    """Ahora solo devuelve las 'claves' (keys) del diccionario de traducciones"""
     if not ratios: return {}
     v = {}
-    
     safety_score = 0
     if ratios.get("Current Ratio", 0) >= 1.5: safety_score += 25
     elif ratios.get("Current Ratio", 0) >= 1: safety_score += 10
@@ -317,11 +346,9 @@ def get_simple_verdicts(ratios):
     elif ratios.get("Cash Ratio", 0) >= 0.2: safety_score += 10
     if ratios.get("Debt/Equity", 100) <= 0.5: safety_score += 25
     elif ratios.get("Debt/Equity", 100) <= 1.5: safety_score += 10
-    
     if safety_score >= 70: v["safety"] = ("🛡️", "very_safe")
     elif safety_score >= 40: v["safety"] = ("🟡", "normal_risk")
     else: v["safety"] = ("⚠️", "risky")
-
     profit_score = 0
     if ratios.get("ROE", 0) >= 15: profit_score += 35
     elif ratios.get("ROE", 0) >= 5: profit_score += 15
@@ -330,15 +357,12 @@ def get_simple_verdicts(ratios):
     elif ratios.get("Net Margin", 0) >= 0: profit_score += 5
     if ratios.get("Assets Turnover", 0) >= 0.5: profit_score += 30
     elif ratios.get("Assets Turnover", 0) >= 0.25: profit_score += 15
-    
     if profit_score >= 70: v["profit"] = ("💰", "highly_profitable")
     elif profit_score >= 40: v["profit"] = ("👍", "making_money")
     else: v["profit"] = ("📉", "struggling")
-
     value_score = 0
     pe, ps, pbv = ratios.get("P/E Ratio", 100), ratios.get("P/S Ratio", 100), ratios.get("P/BV Ratio", 100)
     pcf = ratios.get("P/CF Ratio", 100)
-    
     if 0 < pe <= 15: value_score += 25
     elif 15 < pe <= 25: value_score += 15
     elif pe > 40: value_score -= 5
@@ -351,11 +375,9 @@ def get_simple_verdicts(ratios):
     if pbv <= 1.5: value_score += 25
     elif 1.5 < pbv <= 3: value_score += 15
     elif pbv > 6: value_score -= 5
-
     if value_score >= 70: v["value"] = ("🎁", "great_value")
     elif value_score >= 30: v["value"] = ("💲", "fair_price")
     else: v["value"] = ("🚀", "expensive")
-
     v["total_score"] = max(0, min(100, int((safety_score + profit_score + value_score) / 3)))
     return v
 
@@ -365,219 +387,231 @@ def format_description(description, max_lines=5, max_chars_per_line=85):
     lines = textwrap.wrap(description, width=max_chars_per_line)
     if len(lines) > max_lines:
         lines = lines[:max_lines]
-        if not lines[-1].endswith('...'):
-            lines[-1] = lines[-1][:-3] + '...' if len(lines[-1]) > 3 else '...'
+        if not lines[-1].endswith('...'): lines[-1] = lines[-1][:-3] + '...'
     return '\n'.join(lines)
 
 # ============================================
-# UI DISPLAY FUNCTION
+# UI AUTH & NOTICE
+# ============================================
+def show_auth_screen():
+    st.markdown(f"<h2 style='text-align: center; color: #0a3d6b;'>{t('auth_title')}</h2>", unsafe_allow_html=True)
+    st.markdown(f"<p style='text-align: center; color: #666;'>{t('auth_subtitle')}</p>", unsafe_allow_html=True)
+    tab_login, tab_register = st.tabs([t("login_tab"), t("register_tab")])
+    
+    with tab_login:
+        with st.form("login_form"):
+            email = st.text_input(t("email"), key="login_email")
+            password = st.text_input(t("password"), type="password", key="login_pw")
+            if st.form_submit_button(t("login_btn"), type="primary", width="stretch"):
+                user = authenticate_user(email, password)
+                if user:
+                    st.session_state.logged_in = True
+                    st.session_state.user_data = user
+                    st.rerun()
+                else: st.error(t("err_invalid_creds"))
+                
+    with tab_register:
+        # El selector de avatars va FUERA del formulario para poder hacer click sin enviar el form
+        st.markdown(f"**{t('choose_avatar')}:**")
+        
+        # Crear cuadrícula de 4 columnas para los avatars
+        cols = st.columns(4)
+        for i, avatar in enumerate(AVATARS):
+            with cols[i % 4]:
+                # Si el avatar está seleccionado, el botón se pone azul (type="primary")
+                btn_type = "primary" if st.session_state.selected_avatar == avatar else "secondary"
+                if st.button(avatar, key=f"reg_av_{avatar}", type=btn_type, width="stretch"):
+                    st.session_state.selected_avatar = avatar
+                    st.rerun()
+        
+        st.markdown("---")
+        
+        with st.form("register_form"):
+            col_name, col_last = st.columns(2)
+            with col_name:
+                first_name = st.text_input(t("first_name"), key="reg_fname")
+            with col_last:
+                last_name = st.text_input(t("last_name"), key="reg_lname")
+            email = st.text_input(t("email"), key="reg_email")
+            password = st.text_input(t("password"), type="password", key="reg_pw")
+            
+            if st.form_submit_button(t("register_btn"), type="primary", width="stretch"):
+                if register_user(email, password, first_name, last_name, st.session_state.selected_avatar):
+                    st.success(t("reg_success"))
+                else: 
+                    st.error(t("err_user_exists"))
+
+def show_free_notice():
+    st.warning(f"**{t('free_notice_title')}** \n\n{t('free_notice_text')}")
+    st.button(f"{t('pay_btn_soon')}", disabled=True, width="stretch")
+    st.markdown("<br>", unsafe_allow_html=True)
+
+# ============================================
+# STOCK CARD DISPLAY
 # ============================================
 def display_stock_card(symbol):
     lang = st.session_state.lang
     ratios, info = calc_all_13_ratios(symbol)
-    if not ratios:
-        st.error(t("err_data").format(ticker=symbol))
-        return
-    
+    if not ratios: st.error(t("err_data").format(ticker=symbol)); return
     quote_author, quote_text = get_random_quote(lang)
     verdicts = get_simple_verdicts(ratios)
     score = verdicts["total_score"]
     name = info.get("shortName", symbol)
     sector = info.get("sector", t("unknown_sector"))
-    description = info.get("description") or info.get("longBusinessSummary")
+    description = info.get("description")
     price = info.get("currentPrice") or info.get("regularMarketPrice")
     formatted_description = format_description(description)
-    
     col_name, col_price = st.columns([3, 1])
     with col_name:
         st.subheader(f"{name}")
         st.caption(f"{t('sector')}: {sector}")
-        if formatted_description:
-            st.caption(formatted_description)
+        if formatted_description: st.caption(formatted_description)
     with col_price:
-        if price:
-            st.metric(label=t("current_price"), value=f"${price:.2f}")
-        else:
-            st.metric(label=t("current_price"), value=t("na"))
-    
+        if price: st.metric(label=t("current_price"), value=f"${price:.2f}")
+        else: st.metric(label=t("current_price"), value=t("na"))
     if score >= 75: st.metric(label=t("health_score"), value=f"🟢 {score}/100")
     elif score >= 50: st.metric(label=t("health_score"), value=f"🔵 {score}/100")
     elif score >= 25: st.metric(label=t("health_score"), value=f"🟡 {score}/100")
     else: st.metric(label=t("health_score"), value=f"🔴 {score}/100")
-    
     st.markdown("---")
-    
     col1, col2, col3 = st.columns(3)
-    
     with col1:
-        s_emoji, s_key = verdicts["safety"]
-        s_title = t("safety")
-        s_verdict = t(s_key)
-        s_text = t(f"{s_key}_t")
+        s_emoji, s_key = verdicts["safety"]; s_title = t("safety"); s_verdict = t(s_key); s_text = t(f"{s_key}_t")
         if s_key == "very_safe": st.success(f"**{s_emoji} {s_title}**\n\n### {s_verdict}\n{s_text}")
         elif s_key == "normal_risk": st.warning(f"**{s_emoji} {s_title}**\n\n### {s_verdict}\n{s_text}")
         else: st.error(f"**{s_emoji} {s_title}**\n\n### {s_verdict}\n{s_text}")
-        
     with col2:
-        p_emoji, p_key = verdicts["profit"]
-        p_title = t("profitability")
-        p_verdict = t(p_key)
-        p_text = t(f"{p_key}_t")
+        p_emoji, p_key = verdicts["profit"]; p_title = t("profitability"); p_verdict = t(p_key); p_text = t(f"{p_key}_t")
         if p_key == "highly_profitable": st.success(f"**{p_emoji} {p_title}**\n\n### {p_verdict}\n{p_text}")
         elif p_key == "making_money": st.warning(f"**{p_emoji} {p_title}**\n\n### {p_verdict}\n{p_text}")
         else: st.error(f"**{p_emoji} {p_title}**\n\n### {p_verdict}\n{p_text}")
-        
     with col3:
-        v_emoji, v_key = verdicts["value"]
-        v_title = t("price_value")
-        v_verdict = t(v_key)
-        v_text = t(f"{v_key}_t")
+        v_emoji, v_key = verdicts["value"]; v_title = t("price_value"); v_verdict = t(v_key); v_text = t(f"{v_key}_t")
         if v_key == "great_value": st.success(f"**{v_emoji} {v_title}**\n\n### {v_verdict}\n{v_text}")
         elif v_key == "fair_price": st.warning(f"**{v_emoji} {v_title}**\n\n### {v_verdict}\n{v_text}")
         else: st.error(f"**{v_emoji} {v_title}**\n\n### {v_verdict}\n{v_text}")
-    
     st.markdown("---")
     st.info(f"💡 **{quote_author}**: *\"{quote_text}\"*")
 
 # ============================================
-# MAIN APP UI
+# MAIN APP
 # ============================================
 def main():
     lang = st.session_state.lang
     
     col_logo, col_title = st.columns([3, 7])
-    with col_logo:
-        st.image("logo.png", width=450)
+    with col_logo: st.image("logo.png", width=450)
     with col_title:
         st.markdown("<h1 style='color: #0a3d6b; margin-top: 25px;'>Nivesha</h1>", unsafe_allow_html=True)
         st.markdown(f"<p style='color: #a0a0a0;'>{t('app_subtitle')}</p>", unsafe_allow_html=True)
     st.divider()
     
-    # Sidebar
-    with st.sidebar:
-        # SELECTOR DE IDIOMA
-        col_en, col_es = st.columns(2)
-        with col_en:
-            btn_type_en = "primary" if lang == "en" else "secondary"
-            if st.button("🇺🇸 English", key="lang_en", use_container_width=True, type=btn_type_en):
-                st.session_state.lang = "en"
-                st.rerun()
-        with col_es:
-            btn_type_es = "primary" if lang == "es" else "secondary"
-            if st.button("🇪🇸 Español", key="lang_es", use_container_width=True, type=btn_type_es):
-                st.session_state.lang = "es"
-                st.rerun()
+    if not st.session_state.logged_in:
+        show_auth_screen()
+    else:
+        user_data = st.session_state.user_data
         
-        st.markdown("---")
-        st.header(t("watchlist_header"))
-        
-        with st.form("add_watchlist_form", clear_on_submit=True):
-            new_ticker = st.text_input(t("add_ticker"), placeholder=t("placeholder_ticker"))
-            submitted = st.form_submit_button(t("add_button"))
-            if submitted and new_ticker:
-                clean_ticker = new_ticker.strip().upper()
-                if clean_ticker not in st.session_state.watchlist:
-                    st.session_state.watchlist.append(clean_ticker)
-                    save_watchlist(st.session_state.watchlist)
-                    st.success(t("added_msg").format(ticker=clean_ticker))
-                else:
-                    st.warning(t("already_in_list").format(ticker=clean_ticker))
-        st.markdown("---")
-        if not st.session_state.watchlist:
-            st.info(t("empty_list"))
-        else:
-            for tick in st.session_state.watchlist:
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    if st.button(f"🔍 {tick}", key=f"wl_{tick}", use_container_width=True):
-                        st.session_state.active_ticker = tick
-                with col2:
-                    if st.button("❌", key=f"del_{tick}"):
-                        st.session_state.watchlist.remove(tick)
+        # SIDEBAR
+        with st.sidebar:
+            # Panel de usuario con Avatar, Nombre y Apellido
+            st.markdown(f"<h3 style='text-align: center;'>{user_data['avatar']} {user_data['first_name']} {user_data['last_name']}</h3>", unsafe_allow_html=True)
+            st.caption(f"📧 {user_data['email']}")
+            
+            if st.button(t("logout"), width="stretch"):
+                st.session_state.logged_in = False
+                st.session_state.user_data = None
+                st.rerun()
+            st.markdown("---")
+            
+            col_en, col_es = st.columns(2)
+            with col_en:
+                btn_type_en = "primary" if lang == "en" else "secondary"
+                if st.button("🇺🇸 English", key="lang_en", width="stretch", type=btn_type_en):
+                    st.session_state.lang = "en"; st.rerun()
+            with col_es:
+                btn_type_es = "primary" if lang == "es" else "secondary"
+                if st.button("🇪🇸 Español", key="lang_es", width="stretch", type=btn_type_es):
+                    st.session_state.lang = "es"; st.rerun()
+            st.markdown("---")
+            st.header(t("watchlist_header"))
+            with st.form("add_watchlist_form", clear_on_submit=True):
+                new_ticker = st.text_input(t("add_ticker"), placeholder=t("placeholder_ticker"))
+                submitted = st.form_submit_button(t("add_button"))
+                if submitted and new_ticker:
+                    clean_ticker = new_ticker.strip().upper()
+                    if clean_ticker not in st.session_state.watchlist:
+                        st.session_state.watchlist.append(clean_ticker)
                         save_watchlist(st.session_state.watchlist)
-                        st.rerun()
-            if st.button(t("clear_list")):
-                st.session_state.watchlist = []
-                save_watchlist(st.session_state.watchlist)
-                st.rerun()
-
-    # Tabs
-    tab_single, tab_vs = st.tabs([t("tab_single"), t("tab_vs")])
-    
-    if "active_ticker" not in st.session_state:
-        st.session_state.active_ticker = "AAPL"
-
-    with tab_single:
-        symbol_input = st.text_input(t("enter_ticker"), value=st.session_state.active_ticker, key="single_input")
-        if st.button(t("check_stock"), type="primary", key="single_btn"):
-            display_stock_card(symbol_input.strip().upper())
-            
-            with st.expander(t("price_history")):
-                try:
-                    hist = yf.Ticker(symbol_input.strip().upper()).history(period="2y")
-                    st.line_chart(hist["Close"], height=300)
-                except: 
-                    st.warning(t("load_history_err"))
-            
-            with st.expander(t("geek_mode")):
-                ratios, _ = calc_all_13_ratios(symbol_input.strip().upper())
-                if ratios:
-                    guides = {
-                        "Current Ratio": t("guide_current"),
-                        "Quick Ratio": t("guide_quick"),
-                        "Cash Ratio": t("guide_cash"),
-                        "Debt/Equity": t("guide_debt"),
-                        "Inventory Turnover": t("guide_inventory_t"),
-                        "Days Inventory": t("guide_days_inv"),
-                        "Assets Turnover": t("guide_assets_t"),
-                        "ROE": t("guide_roe"),
-                        "Net Margin": t("guide_margin"),
-                        "P/E Ratio": t("guide_pe"),
-                        "P/CF Ratio": t("guide_pcf"),
-                        "P/S Ratio": t("guide_ps"),
-                        "P/BV Ratio": t("guide_pbv")
-                    }
-                    
-                    ratio_df = pd.DataFrame.from_dict(ratios, orient='index', columns=[t("value")])
-                    ratio_df.index.name = t("ratio")
-                    ratio_df[t("unit")] = ratio_df.index.map(lambda x: "%" if x in ["ROE", "Net Margin"] else "x")
-                    ratio_df[t("what_to_see")] = ratio_df.index.map(guides)
-                    st.dataframe(ratio_df, use_container_width=True)
-
-    with tab_vs:
-        st.markdown(f"### {t('vs_intro')}")
-        col_a, col_b = st.columns(2)
-        with col_a: fighter_a = st.text_input(t("stock_a"), value="AAPL", key="vs_a")
-        with col_b: fighter_b = st.text_input(t("stock_b"), value="MSFT", key="vs_b")
-            
-        if st.button(t("fight_btn"), type="primary", key="vs_btn"):
-            c1, c2 = st.columns(2)
-            score_a, score_b = None, None
-            
-            with c1:
-                try:
-                    ratios_a, _ = calc_all_13_ratios(fighter_a.strip().upper())
-                    if ratios_a: score_a = get_simple_verdicts(ratios_a)["total_score"]
-                except: pass
-            
-            with c2:
-                try:
-                    ratios_b, _ = calc_all_13_ratios(fighter_b.strip().upper())
-                    if ratios_b: score_b = get_simple_verdicts(ratios_b)["total_score"]
-                except: pass
-            
-            if score_a is not None and score_b is not None:
-                if score_a > score_b: winner_text = t("wins_by").format(winner=fighter_a.strip().upper(), diff=score_a - score_b)
-                elif score_b > score_a: winner_text = t("wins_by").format(winner=fighter_b.strip().upper(), diff=score_b - score_a)
-                else: winner_text = t("tie")
-                st.success(winner_text)
-                st.divider()
-                
-                col_left, col_right = st.columns(2)
-                with col_left: display_stock_card(fighter_a.strip().upper())
-                with col_right: display_stock_card(fighter_b.strip().upper())
+                        st.success(t("added_msg").format(ticker=clean_ticker))
+                    else: st.warning(t("already_in_list").format(ticker=clean_ticker))
+            st.markdown("---")
+            if not st.session_state.watchlist: st.info(t("empty_list"))
             else:
-                st.error(t("err_one_or_both"))
+                for tick in st.session_state.watchlist:
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        if st.button(f"🔍 {tick}", key=f"wl_{tick}", width="stretch"): st.session_state.active_ticker = tick
+                    with col2:
+                        if st.button("❌", key=f"del_{tick}"):
+                            st.session_state.watchlist.remove(tick)
+                            save_watchlist(st.session_state.watchlist)
+                            st.rerun()
+                if st.button(t("clear_list")):
+                    st.session_state.watchlist = []
+                    save_watchlist(st.session_state.watchlist)
+                    st.rerun()
+
+        show_free_notice()
+
+        tab_single, tab_vs = st.tabs([t("tab_single"), t("tab_vs")])
+        if "active_ticker" not in st.session_state: st.session_state.active_ticker = "AAPL"
+
+        with tab_single:
+            symbol_input = st.text_input(t("enter_ticker"), value=st.session_state.active_ticker, key="single_input")
+            if st.button(t("check_stock"), type="primary", key="single_btn"):
+                display_stock_card(symbol_input.strip().upper())
+                with st.expander(t("price_history")):
+                    try:
+                        hist = yf.Ticker(symbol_input.strip().upper()).history(period="2y")
+                        st.line_chart(hist["Close"], height=300)
+                    except: st.warning(t("load_history_err"))
+                with st.expander(t("geek_mode")):
+                    ratios, _ = calc_all_13_ratios(symbol_input.strip().upper())
+                    if ratios:
+                        guides = {"Current Ratio": t("guide_current"), "Quick Ratio": t("guide_quick"), "Cash Ratio": t("guide_cash"), "Debt/Equity": t("guide_debt"), "Inventory Turnover": t("guide_inventory_t"), "Days Inventory": t("guide_days_inv"), "Assets Turnover": t("guide_assets_t"), "ROE": t("guide_roe"), "Net Margin": t("guide_margin"), "P/E Ratio": t("guide_pe"), "P/CF Ratio": t("guide_pcf"), "P/S Ratio": t("guide_ps"), "P/BV Ratio": t("guide_pbv")}
+                        ratio_df = pd.DataFrame.from_dict(ratios, orient='index', columns=[t("value")])
+                        ratio_df.index.name = t("ratio")
+                        ratio_df[t("unit")] = ratio_df.index.map(lambda x: "%" if x in ["ROE", "Net Margin"] else "x")
+                        ratio_df[t("what_to_see")] = ratio_df.index.map(guides)
+                        st.dataframe(ratio_df, width="stretch")
+
+        with tab_vs:
+            st.markdown(f"### {t('vs_intro')}")
+            col_a, col_b = st.columns(2)
+            with col_a: fighter_a = st.text_input(t("stock_a"), value="AAPL", key="vs_a")
+            with col_b: fighter_b = st.text_input(t("stock_b"), value="MSFT", key="vs_b")
+            if st.button(t("fight_btn"), type="primary", key="vs_btn"):
+                c1, c2 = st.columns(2)
+                score_a, score_b = None, None
+                with c1:
+                    try:
+                        ratios_a, _ = calc_all_13_ratios(fighter_a.strip().upper())
+                        if ratios_a: score_a = get_simple_verdicts(ratios_a)["total_score"]
+                    except: pass
+                with c2:
+                    try:
+                        ratios_b, _ = calc_all_13_ratios(fighter_b.strip().upper())
+                        if ratios_b: score_b = get_simple_verdicts(ratios_b)["total_score"]
+                    except: pass
+                if score_a is not None and score_b is not None:
+                    if score_a > score_b: winner_text = t("wins_by").format(winner=fighter_a.strip().upper(), diff=score_a - score_b)
+                    elif score_b > score_a: winner_text = t("wins_by").format(winner=fighter_b.strip().upper(), diff=score_b - score_a)
+                    else: winner_text = t("tie")
+                    st.success(winner_text); st.divider()
+                    col_left, col_right = st.columns(2)
+                    with col_left: display_stock_card(fighter_a.strip().upper())
+                    with col_right: display_stock_card(fighter_b.strip().upper())
+                else: st.error(t("err_one_or_both"))
 
 if __name__ == "__main__":
     main()
