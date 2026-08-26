@@ -22,12 +22,8 @@ DB_FILE = "nivesha_users.db"
 if "lang" not in st.session_state:
     st.session_state.lang = "en"
 
-# Avatar options
-AVATARS = [
-    "👨", "👱‍♂️", "👨‍🦱", "🧔", "👨‍🦲", # Hombres
-    "👩", "👩‍🦰", "👩‍🦱",              # Mujeres
-    "🧑", "🧑‍🦰", "🧑‍🦱"               # Neutros
-]
+# Avatar options (Simplificado)
+AVATARS = ["👨", "👩"]
 
 # ============================================
 # DATABASE & AUTH SYSTEM
@@ -412,18 +408,20 @@ def show_auth_screen():
                 else: st.error(t("err_invalid_creds"))
                 
     with tab_register:
-        # El selector de avatars va FUERA del formulario para poder hacer click sin enviar el form
+        # Selector de género/avatar
         st.markdown(f"**{t('choose_avatar')}:**")
         
-        # Crear cuadrícula de 4 columnas para los avatars
-        cols = st.columns(4)
-        for i, avatar in enumerate(AVATARS):
-            with cols[i % 4]:
-                # Si el avatar está seleccionado, el botón se pone azul (type="primary")
-                btn_type = "primary" if st.session_state.selected_avatar == avatar else "secondary"
-                if st.button(avatar, key=f"reg_av_{avatar}", type=btn_type, width="stretch"):
-                    st.session_state.selected_avatar = avatar
-                    st.rerun()
+        col_hombre, col_mujer = st.columns(2)
+        with col_hombre:
+            btn_type_h = "primary" if st.session_state.selected_avatar == "👨" else "secondary"
+            if st.button("👨 Hombre", key="reg_av_hombre", type=btn_type_h, width="stretch"):
+                st.session_state.selected_avatar = "👨"
+                st.rerun()
+        with col_mujer:
+            btn_type_m = "primary" if st.session_state.selected_avatar == "👩" else "secondary"
+            if st.button("👩 Mujer", key="reg_av_mujer", type=btn_type_m, width="stretch"):
+                st.session_state.selected_avatar = "👩"
+                st.rerun()
         
         st.markdown("---")
         
