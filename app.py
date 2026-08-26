@@ -281,7 +281,8 @@ def get_data(symbol):
         info = ticker.info
         if "description" not in info: info["description"] = info.get("longBusinessSummary") or None
         return {"inc": ticker.income_stmt, "bs": ticker.balance_sheet, "cf": ticker.cash_flow, "info": info}
-    except:
+    except Exception as e:
+        print(f"Error de Yahoo Finance para {symbol}: {e}") # Esto te mostrará el error real en la terminal
         av_data = get_data_av(symbol)
         if av_data == "RATE_LIMIT": st.warning(t("rate_limit")); st.stop()
         if isinstance(av_data, str): st.error(t("debug_err").format(err=av_data)); st.stop()
