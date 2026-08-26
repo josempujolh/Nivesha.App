@@ -44,11 +44,12 @@ def init_db():
                   avatar TEXT DEFAULT '🧑',
                   is_premium BOOLEAN DEFAULT 0)''')
     
+    # Si el usuario ya tenía la app, añadimos las nuevas columnas sin borrar lo anterior
     try: c.execute("ALTER TABLE users ADD COLUMN first_name TEXT DEFAULT ''")
     except: pass
     try: c.execute("ALTER TABLE users ADD COLUMN last_name TEXT DEFAULT ''")
     except: pass
-    try: c.execute("ALTER TABLE users ADD COLUMN avatar DEFAULT '🧑')
+    try: c.execute("ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT '🧑'")
     except: pass
             
     conn.commit()
@@ -69,7 +70,7 @@ def register_user(email, password, first_name, last_name, avatar):
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
         hashed_pw = hash_password(password)
-        c.execute("INSERT INTO users (email, password, first_name, last_name, avatar) VALUES (?, ?, ?, ?, ?, ?)", 
+        c.execute("INSERT INTO users (email, password, first_name, last_name, avatar) VALUES (?, ?, ?, ?, ?)", 
                   (email, hashed_pw, first_name, last_name, avatar))
         conn.commit()
         conn.close()
@@ -236,55 +237,56 @@ if "watchlist" not in st.session_state:
     st.session_state.watchlist = load_watchlist()
 
 # ============================================
-# BACKEND DATA (LA NUEVA LÓGICA QUE RESUELVE EL PROBLEMA DEL CUELGO
+# BACKEND DATA
 # ============================================
 def get_company_description(symbol):
-    """Obtiene la descripción de la empresa directamente de los datos de Alpha Vantage (o Yahoo Finance)"""
     try:
-        # Usamos download para obtener solo la información básica sin el objeto pesado de Ticker
-        # progress=False evita que descargue todo el historial de precios, haciéndolo súper rápido
-        ticker_data = yf.download(symbol, info=True, progress=False)
-        
-        # Extraer la información del diccionario descargado
-        if isinstance(ticker_data, pd.DataFrame):
-            return ticker_data.info
-        else:
-            # Si falla la descarga de Alpha Vantage, intentamos con Yahoo Finance como plan B
-            try:
-                info = yf.Ticker(symbol).info
-                return info.get("longBusinessSummary") or info.get("businessSummary") or None
-            except:
-                return None
-    except:
-        return None
+        info = yf.Ticker(symbol).info
+        return info.get("longBusinessSummary") or info.get("businessSummary") or None
+    except: return None
+
+def get_data_av(sym):
+    try:
+        inc_resp = requests.get(AV_URL, params={"function": "INCOME_STATEMENT", "symbol": sym, "apikey": AV_KEY}).json()
+        if "Note" in inc_resp: return "RATE_LIMIT"
+        inc = inc_resp.get("annualReports", [])
+        bs = requests.get(AV_URL, params={"function": "BALANCE_SHEET", "symbol": sym, "apikey": AV_KEY}).json().get("annualReports", [])
+        cf = requests.get(AV_URL, params={"function": "CASH_FLOW", "symbol": sym, "apikey": AV_KEY}).json().get("annualReports", [])
+        info_av = requests.get(AV_URL, params={"function": "OVERVIEW", "symbol": sym, "apikey": AV_KEY}).json()
+        quote = requests.get(AV_URL, params={"function": "GLOBAL_QUOTE", "symbol": sym, "apikey": AV_KEY}).json().get("Global Quote", {})
+        if len(inc) < 2 or len(bs) < 2: return None
+        col1, col2 = "Year1", "Year2"
+        d_inc = {"Total Revenue": [float(inc[0].get("totalRevenue", 0) or 0)], "Cost Of Revenue": [float(inc[0].get("costofGoodsAndServicesSold", 0) or 0)], "Net Income": [float(inc[0].get("netIncome", 0) or 0)]}
+        d_bs = {"Total Current Assets": [float(bs[0].get("totalCurrentAssets", 0) or 0)], "Total Current Liabilities": [float(bs[0].get("totalCurrentLiabilities", 0) or 0)], "Inventory": [float(bs[0].get("inventory", 0) or 0)], "Cash And Cash Equivalents": [float(bs[0].get("cashAndCashEquivalentsAtCarryingValue", 0) or 0)], "Short Term Debt": [float(bs[0].get("shortTermDebt", 0) or 0)], "Long Term Debt": [float(bs[0].get("longTermDebt", 0) or 0)], "Stockholders Equity": [float(bs[0].get("totalShareholderEquity", 0) or 0)], "Total Assets": [float(bs[0].get("totalAssets", 0) or 0)]}
+        d_cf = {"Operating Cash Flow": [float(cf[0].get("operatingCashflow", 0) or 0)]}
+        df_inc = pd.DataFrame(d_inc, index=[col1]).T
+        df_bs = pd.DataFrame(d_bs, index=[col1]).T
+        df_cf = pd.DataFrame(d_cf, index=[col1]).T
+        df_bs[col2] = [float(bs[1].get("totalCurrentAssets", 0) or 0), float(bs[1].get("totalCurrentLiabilities", 0) or 0), float(bs[1].get("inventory", 0) or 0), 0, 0, 0, float(bs[1].get("totalShareholderEquity", 0) or 0), float(bs[1].get("totalAssets", 0) or 0)]
+        df_inc[col2] = ["", "", ""]
+        info = {
+            "shortName": info_av.get("Name", sym), "sector": info_av.get("Sector", "Unknown"), 
+            "description": get_company_description(sym),
+            "currentPrice": float(quote.get("05. price", 0)) if quote.get("05. price") else None, 
+            "sharesOutstanding": float(info_av.get("SharesOutstanding", 0)) if info_av.get("SharesOutstanding") else None, 
+            "marketCap": float(info_av.get("MarketCapitalization", 0)) if info_av.get("MarketCapitalization") else None
+        }
+        return {"inc": df_inc, "bs": df_bs, "cf": df_cf, "info": info}
+    except Exception as e: return str(e)
 
 @st.cache_data(ttl=3600)
 def get_data(symbol):
-    """Función optimizada que usa yf.download SOLO para el nombre y el sector, evitando el cuelgue de yfinance"""
     try:
-        # Usamos download para obtener solo la información básica (nombre y sector) sin el objeto Ticker pesado
-        # progress=False evita que descargue todo el historial de precios, haciéndolo súper rápido
-        ticker_data = yf.download(symbol, info=True, progress=False)
-        
-        # Extraer la información del diccionario descargado
-        if isinstance(ticker_data, pd.DataFrame):
-            info = ticker_data.info
-        else:
-            # Si falla la descarga de Alpha Vantage, intentamos con Yahoo Finance como plan B
-            try:
-                info = yf.Ticker(symbol).info
-                return {"inc": ticker.income_stmt, "bs": ticker.balance_sheet, "cf": ticker.cash_flow, "info": info}
-            except:
-                return None
-        
-        # El resto de los datos financieros siguen usando el objeto Ticker porque son más estables
-        return {
-            "inc": ticker.income_stmt,
-            "bs": ticker.balance_sheet,
-            "cf": ticker.cash_flow, 
-            "info": info
-        }
-    except Exception as e: return None
+        ticker = yf.Ticker(symbol)
+        info = ticker.info
+        if "description" not in info: info["description"] = info.get("longBusinessSummary") or None
+        return {"inc": ticker.income_stmt, "bs": ticker.balance_sheet, "cf": ticker.cash_flow, "info": info}
+    except:
+        av_data = get_data_av(symbol)
+        if av_data == "RATE_LIMIT": st.warning(t("rate_limit")); st.stop()
+        if isinstance(av_data, str): st.error(t("debug_err").format(err=av_data)); st.stop()
+        if not av_data: st.error(t("no_data_av")); st.stop()
+        return av_data
 
 def sget(df, idx, col):
     try:
@@ -298,36 +300,30 @@ def sget(df, idx, col):
 def calc_all_13_ratios(sym):
     d = get_data(sym)
     if len(d["inc"].columns) < 2: return None, d["info"]
-    
     info = d["info"]
     col, pcol = d["inc"].columns[0], d["inc"].columns[1]
-    
     tca = sget(d["bs"], "Total Current Assets", col) or sget(d["bs"], "Current Assets", col)
     tcl = sget(d["bs"], "Total Current Liabilities", col) or sget(d["bs"], "Current Liabilities", col)
     inv = sget(d["bs"], "Inventory", col) or 0
     cash = sget(d["bs"], "Cash And Cash Equivalents", col) or sget(d["bs"], "Cash", col)
     td = (sget(d["bs"], "Short Term Debt", col) or 0) + (sget(d["bs"], "Long Term Debt", col) or 0)
-    te = sget(d["bs"], "Stockholders Equity", col) or sget(d["bs"], "Common Stock Equity", col) or sget(d["bs"], "Stockholders' Equity", col)
+    te = sget(d["bs"], "Stockholders Equity", col) or sget(d["bs"], "Stockholders' Equity", col)
     ta = sget(d["bs"], "Total Assets", col); pta = sget(d["bs"], "Total Assets", pcol)
     rev = sget(d["inc"], "Total Revenue", col)
-    cogs = sget(d["inc"], "Cost Of Revenue", col) or sget(d["inc"], "Cost of Revenue", col) or sget(d["inc"], "Cost of Revenue", col)
+    cogs = sget(d["inc"], "Cost Of Revenue", col) or sget(d["inc"], "Cost of Revenue", col)
     ni = sget(d["inc"], "Net Income", col)
-    
     ocf = sget(d["cf"], "Operating Cash Flow", col)
-    
     p_inv = sget(d["bs"], "Inventory", pcol) or 0
-    avg_inv = (inv + p_inv) / 2
-    avg_ta = ((ta or 0) + (pta or 0)) / 2
+    avg_inv = (inv + p_inv) / 2; avg_ta = ((ta or 0) + (pta or 0)) / 2
     price = info.get("currentPrice") or info.get("regularMarketPrice")
     shares = info.get("sharesOutstanding")
     if not shares and price and info.get("marketCap"): shares = info["marketCap"] / price
-    
     r = {}
     if tca and tcl and tcl != 0: r["Current Ratio"] = tca/tcl
     if tca and tcl and tcl != 0: r["Quick Ratio"] = (tca - inv)/tcl
     if cash and tcl and tcl != 0: r["Cash Ratio"] = cash/tcl
     if td and te and te != 0: r["Debt/Equity"] = td/te
-    if cogs and avg_inv and avg_inv and avg_inv != 0: r["Inventory Turnover"] = cogs/avg_inv
+    if cogs and avg_inv and avg_inv != 0: r["Inventory Turnover"] = cogs/avg_inv
     if "Inventory Turnover" in r and r["Inventory Turnover"] != 0: r["Days Inventory"] = 365/r["Inventory Turnover"]
     if rev and avg_ta and avg_ta != 0: r["Assets Turnover"] = rev/avg_ta
     if ni and te and te != 0: r["ROE"] = (ni/te)*100
@@ -353,7 +349,6 @@ def get_simple_verdicts(ratios):
     if safety_score >= 70: v["safety"] = ("🛡️", "very_safe")
     elif safety_score >= 40: v["safety"] = ("🟡", "normal_risk")
     else: v["safety"] = ("⚠️", "risky")
-    
     profit_score = 0
     if ratios.get("ROE", 0) >= 15: profit_score += 35
     elif ratios.get("ROE", 0) >= 5: profit_score += 15
@@ -365,7 +360,6 @@ def get_simple_verdicts(ratios):
     if profit_score >= 70: v["profit"] = ("💰", "highly_profitable")
     elif profit_score >= 40: v["profit"] = ("👍", "making_money")
     else: v["profit"] = ("📉", "struggling")
-    
     value_score = 0
     pe, ps, pbv = ratios.get("P/E Ratio", 100), ratios.get("P/S Ratio", 100), ratios.get("P/BV Ratio", 100)
     pcf = ratios.get("P/CF Ratio", 100)
@@ -374,6 +368,7 @@ def get_simple_verdicts(ratios):
     elif pe > 40: value_score -= 5
     if 0 < pcf <= 15: value_score += 25
     elif 15 < pcf <= 25: value_score += 15
+    elif pcf > 40: value_score -= 5
     if ps <= 1.5: value_score += 25
     elif 1.5 < ps <= 3: value_score += 15
     elif ps > 7: value_score -= 5
@@ -416,11 +411,14 @@ def show_auth_screen():
                 else: st.error(t("err_invalid_creds"))
                 
     with tab_register:
+        # El selector de avatars va FUERA del formulario para poder hacer click sin enviar el form
         st.markdown(f"**{t('choose_avatar')}:**")
         
+        # Crear cuadrícula de 4 columnas para los avatars
         cols = st.columns(4)
         for i, avatar in enumerate(AVATARS):
             with cols[i % 4]:
+                # Si el avatar está seleccionado, el botón se pone azul (type="primary")
                 btn_type = "primary" if st.session_state.selected_avatar == avatar else "secondary"
                 if st.button(avatar, key=f"reg_av_{avatar}", type=btn_type, width="stretch"):
                     st.session_state.selected_avatar = avatar
@@ -455,17 +453,14 @@ def display_stock_card(symbol):
     lang = st.session_state.lang
     ratios, info = calc_all_13_ratios(symbol)
     if not ratios: st.error(t("err_data").format(ticker=symbol)); return
-    
     quote_author, quote_text = get_random_quote(lang)
     verdicts = get_simple_verdicts(ratios)
     score = verdicts["total_score"]
     name = info.get("shortName", symbol)
     sector = info.get("sector", t("unknown_sector"))
-    # CAMBIO AQUÍ: Obtener la descripción directamente del diccionario info que ya está disponible
-    description = info.get("description") or info.get("longBusinessSummary") or None
+    description = info.get("description")
     price = info.get("currentPrice") or info.get("regularMarketPrice")
     formatted_description = format_description(description)
-    
     col_name, col_price = st.columns([3, 1])
     with col_name:
         st.subheader(f"{name}")
@@ -474,13 +469,11 @@ def display_stock_card(symbol):
     with col_price:
         if price: st.metric(label=t("current_price"), value=f"${price:.2f}")
         else: st.metric(label=t("current_price"), value=t("na"))
-        
     if score >= 75: st.metric(label=t("health_score"), value=f"🟢 {score}/100")
     elif score >= 50: st.metric(label=t("health_score"), value=f"🔵 {score}/100")
     elif score >= 25: st.metric(label=t("health_score"), value=f"🟡 {score}/100")
     else: st.metric(label=t("health_score"), value=f"🔴 {score}/100")
     st.markdown("---")
-    
     col1, col2, col3 = st.columns(3)
     with col1:
         s_emoji, s_key = verdicts["safety"]; s_title = t("safety"); s_verdict = t(s_key); s_text = t(f"{s_key}_t")
@@ -510,7 +503,7 @@ def main():
     with col_logo: st.image("logo.png", width=450)
     with col_title:
         st.markdown("<h1 style='color: #0a3d6b; margin-top: 25px;'>Nivesha</h1>", unsafe_allow_html=True)
-        st.markdown(f"<p style='color: #a0a0a0a0;'>{t('app_subtitle')}</p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='color: #a0a0a0;'>{t('app_subtitle')}</p>", unsafe_allow_html=True)
     st.divider()
     
     if not st.session_state.logged_in:
@@ -557,7 +550,7 @@ def main():
                 for tick in st.session_state.watchlist:
                     col1, col2 = st.columns([3, 1])
                     with col1:
-                        if st.button(f"🔍 {tick}", key=f"wl_{tick}", key=f"wl_{tick}", width="stretch"): st.session_state.active_ticker = tick
+                        if st.button(f"🔍 {tick}", key=f"wl_{tick}", width="stretch"): st.session_state.active_ticker = tick
                     with col2:
                         if st.button("❌", key=f"del_{tick}"):
                             st.session_state.watchlist.remove(tick)
@@ -568,7 +561,6 @@ def main():
                     save_watchlist(st.session_state.watchlist)
                     st.rerun()
 
-        # CONTENIDO PRINCIPAL
         show_free_notice()
 
         tab_single, tab_vs = st.tabs([t("tab_single"), t("tab_vs")])
@@ -578,7 +570,6 @@ def main():
             symbol_input = st.text_input(t("enter_ticker"), value=st.session_state.active_ticker, key="single_input")
             if st.button(t("check_stock"), type="primary", key="single_btn"):
                 display_stock_card(symbol_input.strip().upper())
-                
                 with st.expander(t("price_history")):
                     try:
                         hist = yf.Ticker(symbol_input.strip().upper()).history(period="2y")
@@ -599,7 +590,6 @@ def main():
             col_a, col_b = st.columns(2)
             with col_a: fighter_a = st.text_input(t("stock_a"), value="AAPL", key="vs_a")
             with col_b: fighter_b = st.text_input(t("stock_b"), value="MSFT", key="vs_b")
-            
             if st.button(t("fight_btn"), type="primary", key="vs_btn"):
                 c1, c2 = st.columns(2)
                 score_a, score_b = None, None
@@ -623,4 +613,5 @@ def main():
                     with col_right: display_stock_card(fighter_b.strip().upper())
                 else: st.error(t("err_one_or_both"))
 
-if __name__ == "__main__":    main()
+if __name__ == "__main__":
+    main()
