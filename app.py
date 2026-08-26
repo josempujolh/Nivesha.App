@@ -48,7 +48,7 @@ def init_db():
     except: pass
     try: c.execute("ALTER TABLE users ADD COLUMN last_name TEXT DEFAULT ''")
     except: pass
-    try: c.execute("ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT '🧑')
+    try: c.execute("ALTER TABLE users ADD COLUMN avatar DEFAULT '🧑')
     except: pass
             
     conn.commit()
