@@ -252,7 +252,7 @@ def get_data_av(sym):
         df_inc[col2] = ["", "", ""]
         info = {
             "shortName": info_av.get("Name", sym), "sector": info_av.get("Sector", "Unknown"), 
-            "description": get_company_description(sym),
+            "description": info_av.get("Description"),
             "currentPrice": float(quote.get("05. price", 0)) if quote.get("05. price") else None, 
             "sharesOutstanding": float(info_av.get("SharesOutstanding", 0)) if info_av.get("SharesOutstanding") else None, 
             "marketCap": float(info_av.get("MarketCapitalization", 0)) if info_av.get("MarketCapitalization") else None
@@ -266,8 +266,18 @@ def get_data(symbol):
         ticker = yf.Ticker(symbol)
         info = ticker.info
         if "description" not in info: info["description"] = info.get("longBusinessSummary") or None
+        
+        # --- RESPALDO: Si Yahoo no trae el sector o descripción, usamos Alpha Vantage ---
+        if not info.get("sector") or not info.get("description"):
+            try:
+                av_info = requests.get(AV_URL, params={"function": "OVERVIEW", "symbol": symbol, "apikey": AV_KEY}).json()
+                if not info.get("sector"): info["sector"] = av_info.get("Sector", t("unknown_sector"))
+                if not info.get("description"): info["description"] = av_info.get("Description")
+            except: pass
+        # --------------------------------------------------------------------------------------
+
         return {"inc": ticker.income_stmt, "bs": ticker.balance_sheet, "cf": ticker.cash_flow, "info": info}
-    except Exception as e:
+    except: Exception as e:
         print(f"Error de Yahoo Finance para {symbol}: {e}") # Esto te mostrará el error real en la terminal
         av_data = get_data_av(symbol)
         if av_data == "RATE_LIMIT": st.warning(t("rate_limit")); st.stop()
