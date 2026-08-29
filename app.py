@@ -6,18 +6,24 @@ import requests
 import os
 import textwrap
 import random
-import sqlite3
 import hashlib
 import secrets
+from supabase import create_client, Client
 
 # ============================================
 # CONFIGURATION
 # ============================================
 st.set_page_config(page_title="Nivesha", page_icon="logo.png", layout="wide")
 WATCHLIST_FILE = "my_watchlist.json"
-AV_KEY = "V8TXR4IBIMTJCFNB"
+
+# Leer claves de los secretos
+AV_KEY = st.secrets["AV_KEY"]
 AV_URL = "https://www.alphavantage.co/query"
-DB_FILE = "nivesha_users.db"
+
+# Conexión a Supabase
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 if "lang" not in st.session_state:
     st.session_state.lang = "en"
@@ -26,31 +32,8 @@ if "lang" not in st.session_state:
 AVATARS = ["👨", "👩"]
 
 # ============================================
-# DATABASE & AUTH SYSTEM
+# DATABASE & AUTH SYSTEM (Supabase)
 # ============================================
-def init_db():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS users
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  email TEXT UNIQUE NOT NULL,
-                  password TEXT NOT NULL,
-                  first_name TEXT DEFAULT '',
-                  last_name TEXT DEFAULT '',
-                  avatar TEXT DEFAULT '🧑',
-                  is_premium BOOLEAN DEFAULT 0)''')
-    
-    # Si el usuario ya tenía la app, añadimos las nuevas columnas sin borrar lo anterior
-    try: c.execute("ALTER TABLE users ADD COLUMN first_name TEXT DEFAULT ''")
-    except: pass
-    try: c.execute("ALTER TABLE users ADD COLUMN last_name TEXT DEFAULT ''")
-    except: pass
-    try: c.execute("ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT '🧑'")
-    except: pass
-            
-    conn.commit()
-    conn.close()
-
 def hash_password(password):
     salt = secrets.token_hex(16)
     hash_obj = hashlib.sha256((password + salt).encode())
@@ -63,31 +46,38 @@ def verify_password(password, hashed_password):
 
 def register_user(email, password, first_name, last_name, avatar):
     try:
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
         hashed_pw = hash_password(password)
-        c.execute("INSERT INTO users (email, password, first_name, last_name, avatar) VALUES (?, ?, ?, ?, ?)", 
-                  (email, hashed_pw, first_name, last_name, avatar))
-        conn.commit()
-        conn.close()
+        supabase.table("users").insert({
+            "email": email, 
+            "password": hashed_pw, 
+            "first_name": first_name, 
+            "last_name": last_name, 
+            "avatar": avatar
+        }).execute()
         return True
-    except sqlite3.IntegrityError:
+    except Exception as e:
+        # Si el correo ya existe, Supabase da error de duplicado
+        if "duplicate" in str(e).lower() or "unique" in str(e).lower():
+            return False
         return False
 
 def authenticate_user(email, password):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT id, password, is_premium, first_name, last_name, avatar FROM users WHERE email = ?", (email,))
-    user = c.fetchone()
-    conn.close()
-    if user and verify_password(password, user[1]):
-        return {
-            "id": user[0], "email": email, "is_premium": bool(user[2]),
-            "first_name": user[3], "last_name": user[4], "avatar": user[5]
-        }
-    return None
+    try:
+        response = supabase.table("users").select("id, password, is_premium, first_name, last_name, avatar").eq("email", email).execute()
+        if not response.data:
+            return None
+        
+        user = response.data[0] # Tomar el primer resultado
+        if verify_password(password, user["password"]):
+            return {
+                "id": user["id"], "email": email, "is_premium": bool(user["is_premium"]),
+                "first_name": user["first_name"], "last_name": user["last_name"], "avatar": user["avatar"]
+            }
+        return None
+    except:
+        return None
 
-init_db()
+
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
