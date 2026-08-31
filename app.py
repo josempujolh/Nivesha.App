@@ -9,6 +9,7 @@ import random
 import hashlib
 import secrets
 from supabase import create_client, Client
+import cohere
 
 # ============================================
 # CONFIGURATION
@@ -24,6 +25,9 @@ AV_URL = "https://www.alphavantage.co/query"
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# Configurar IA (Cohere)
+co = cohere.Client(st.secrets["COHERE_KEY"])
 
 if "lang" not in st.session_state:
     st.session_state.lang = "en"
@@ -562,7 +566,7 @@ def main():
 
         show_free_notice()
 
-        tab_single, tab_vs = st.tabs([t("tab_single"), t("tab_vs")])
+        tab_single, tab_vs, tab_ai = st.tabs([t("tab_single"), t("tab_vs"), "🤖 Asistente IA"])
         if "active_ticker" not in st.session_state: st.session_state.active_ticker = "AAPL"
 
         with tab_single:
@@ -611,6 +615,27 @@ def main():
                     with col_left: display_stock_card(fighter_a.strip().upper())
                     with col_right: display_stock_card(fighter_b.strip().upper())
                 else: st.error(t("err_one_or_both"))
+
+        with tab_ai:
+            st.markdown("### 💡 Pídele ideas a la Inteligencia Artificial")
+            st.caption("La IA puede cometer errores. Usa sus sugerencias como punto de partida para analizarlas en las pestañas anteriores.")
+            
+            pregunta_usuario = st.text_input("Ejemplo: Dame 3 acciones tecnológicas baratas para analizar")
+            
+            if st.button("🧠 Preguntar a la IA", type="primary"):
+                if not pregunta_usuario:
+                    st.warning("Por favor, escribe una pregunta.")
+                else:
+                    with st.spinner("Pensando..."):
+                        try:
+                            response = co.chat(
+                                model="command-r-08-2024",
+                                message=pregunta_usuario,
+                                preamble=f"Eres un asistente financiero amigable. Responde en {st.session_state.lang}."
+                            )
+                            st.success(response.text)
+                        except Exception as e:
+                            st.error(f"Error con la IA: {e}")
 
 if __name__ == "__main__":
     main()
