@@ -10,6 +10,7 @@ import hashlib
 import secrets
 from supabase import create_client, Client
 import cohere
+from datetime import datetime, timedelta
 
 # ============================================
 # CONFIGURATION
@@ -28,6 +29,9 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Configurar IA (Cohere)
 co = cohere.Client(st.secrets["COHERE_KEY"])
+
+# Configurar Resend (Envío de correos)
+APP_URL = "https://niveshaapp-pztynp9keymapgfnrluotq.streamlit.app/" # Cuando lo subamos a la nube, cambiaremos esto
 
 if "lang" not in st.session_state:
     st.session_state.lang = "en"
@@ -81,7 +85,60 @@ def authenticate_user(email, password):
     except:
         return None
 
+def send_reset_email(email):
+    try:
+        # 1. Generar token y fecha de expiración (15 minutos)
+        token = secrets.token_urlsafe(16)
+        exp_time = datetime.now() + timedelta(minutes=15)
+        exp_str = exp_time.strftime("%Y-%m-%d %H:%M:%S")
 
+        # 2. Guardar en Supabase
+        supabase.table("users").update({
+            "reset_token": token, 
+            "reset_expiration": exp_str
+        }).eq("email", email).execute()
+
+        # 3. Enviar correo (Método directo sin instalar librerías)
+        reset_link = f"{APP_URL}/?reset_token={token}"
+        payload = {
+            "from": "Nivesha App <onboarding@resend.dev>",
+            "to": [email],
+            "subject": "Recupera tu clave de Nivesha",
+            "html": f"<h2>Hola,</h2><p>Haz clic en el siguiente enlace para cambiar tu clave (vence en 15 minutos):</p><p><a href='{reset_link}' style='background:#0a3d6b;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;'>Cambiar mi clave</a></p>"
+        }
+        headers = {
+            "Authorization": f"Bearer {st.secrets['RESEND_KEY']}",
+            "Content-Type": "application/json"
+        }
+        requests.post("https://api.resend.com/emails", json=payload, headers=headers)
+        return True
+    except Exception as e:
+        print(f"Error enviando correo: {e}")
+        return False
+
+def verify_reset_token(token):
+    if not token: return None
+    try:
+        response = supabase.table("users").select("email, reset_expiration").eq("reset_token", token).execute()
+        if not response.data: return None
+        
+        user = response.data[0]
+        exp_time = datetime.strptime(user["reset_expiration"], "%Y-%m-%d %H:%M:%S")
+        
+        if datetime.now() > exp_time:
+            return None # El token expiró
+            
+        return user["email"]
+    except:
+        return None
+
+def update_new_password(email, new_password):
+    hashed_pw = hash_password(new_password)
+    supabase.table("users").update({
+        "password": hashed_pw, 
+        "reset_token": None, 
+        "reset_expiration": None
+    }).eq("email", email).execute()
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -411,6 +468,16 @@ def show_auth_screen():
                     st.rerun()
                 else: st.error(t("err_invalid_creds"))
                 
+        # Sección de recuperar clave (Fuera del formulario de login)
+        with st.expander("¿Olvidaste tu clave?"):
+            reset_email = st.text_input("Tu correo registrado", key="reset_email_input")
+            if st.button("Enviar enlace de recuperación"):
+                if reset_email:
+                    if send_reset_email(reset_email):
+                        st.success("¡Enlace enviado! Revisa tu correo (y la carpeta de Spam).")
+                    else:
+                        st.error("No se pudo enviar. Asegúrate de que el correo esté registrado.")
+                
     with tab_register:
         # Selector de género/avatar
         st.markdown(f"**{t('choose_avatar')}:**")
@@ -501,6 +568,33 @@ def display_stock_card(symbol):
 # ============================================
 def main():
     lang = st.session_state.lang
+
+    # ==========================================
+    # INTERCEPTAR ENLACE DE RECUPERACIÓN
+    # ==========================================
+    query_params = st.query_params
+    reset_token = query_params.get("reset_token")
+    
+    if reset_token:
+        st.markdown("<h1 style='text-align: center; color: #0a3d6b;'>Nivesha - Cambiar Clave</h1>", unsafe_allow_html=True)
+        email = verify_reset_token(reset_token)
+        
+        if email:
+            st.info(f"Escribiendo la nueva clave para: **{email}**")
+            with st.form("new_pw_form"):
+                new_pw = st.text_input("Nueva clave", type="password", key="new_pw")
+                confirm_pw = st.text_input("Confirmar nueva clave", type="password", key="confirm_pw")
+                if st.form_submit_button("Guardar nueva clave", type="primary"):
+                    if new_pw == confirm_pw and len(new_pw) >= 6:
+                        update_new_password(email, new_pw)
+                        st.success("¡Clave cambiada con éxito! Ya puedes iniciar sesión.")
+                        del query_params["reset_token"] # Limpia la URL
+                        st.rerun()
+                    else:
+                        st.error("Las claves no coinciden o son muy cortas (mínimo 6 caracteres).")
+        else:
+            st.error("El enlace es inválido o ha expirado. Pide uno nuevo.")
+        return # Detiene la app para no mostrar el login normal
     
     col_logo, col_title = st.columns([3, 7])
     with col_logo: st.image("logo.png", width=450)
