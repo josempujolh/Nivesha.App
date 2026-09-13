@@ -522,6 +522,85 @@ def show_free_notice():
 def display_stock_card(symbol):
     lang = st.session_state.lang
     ratios, info = calc_all_13_ratios(symbol)
+    
+    # ============================================
+    # DETECTOR DE ACTIVOS (ETFs y REITs)
+        # ============================================
+    # DETECTOR DE ACTIVOS (ETFs y REITs)
+    # ============================================
+    quote_type = info.get("quoteType", "EQUITY")
+    sector = info.get("sector", "")
+    
+    # 1. SI ES UN ETF (Análisis especial)
+    if quote_type == "ETF":
+        name = info.get("shortName", symbol)
+        price = info.get("currentPrice") or info.get("regularMarketPrice")
+        st.subheader(f"📊 {name}")
+        if price: st.metric("Precio Actual", f"${price:.2f}")
+        else: st.metric("Precio Actual", "N/D")
+        
+        st.markdown("---")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            yield_val = info.get("dividendYield")
+            if yield_val: st.metric("Dividend Yield (Rendimiento)", f"{yield_val*100:.2f}%")
+            expense_ratio = info.get("annualReportExpenseRatio")
+            if expense_ratio: st.metric("Expense Ratio (Comisión)", f"{expense_ratio*100:.2f}%")
+            
+        with col2:
+            ytd = info.get("ytdReturn")
+            if ytd: st.metric("Retorno Este Año (YTD)", f"{ytd*100:.2f}%")
+            avg_3y = info.get("threeYearAverageReturn")
+            if avg_3y: st.metric("Retorno Promedio (3 Años)", f"{avg_3y*100:.2f}%")
+            avg_5y = info.get("fiveYearAverageReturn")
+            if avg_5y: st.metric("Retorno Promedio (5 Años)", f"{avg_5y*100:.2f}%")
+            
+        st.markdown("---")
+        st.subheader("🧠 Veredicto del ETF")
+        
+        # Veredicto de comisión
+        if expense_ratio:
+            if expense_ratio < 0.002: st.success("✅ **Comisión Excelente.** Este ETF es muy barato de mantener. La mayoría de tus ganancias se quedan en tu bolsillo, ideal para el largo plazo.")
+            elif expense_ratio < 0.005: st.warning("🟡 **Comisión Aceptable.** No es el más barato del mercado, pero está bien si sigue un índice muy específico que te interese.")
+            else: st.error("🔴 **Comisión Alta.** Cuidado. Las comisiones altas se comen tus ganancias compuestas a lo largo de los años. Existen alternativas más baratas.")
+        else:
+            st.info("No se pudo obtener la comisión de este ETF.")
+            
+        return # Detiene el análisis tradicional
+
+    # 2. SI ES UN REIT (Análisis adaptado)
+    if sector == "Real Estate":
+        st.markdown("### 🏗️ Análisis de REIT (Bienes Raíces)")
+        st.warning("⚠️ Los ratios comunes (como el P/E Ratio y el Margen Neto) **mienten** en los REITs por las leyes de depreciación contable. Usa las métricas de abajo para decidir:")
+        
+        yield_val = info.get("dividendYield")
+        pcf = ratios.get("P/CF Ratio") if ratios else None
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if yield_val: 
+                st.metric("Dividend Yield (Rendimiento)", f"{yield_val*100:.2f}%")
+                if yield_val > 0.05: st.success("Rendimiento excelente. Este REIT paga mucho por tu inversión, ideal para vivir de ingresos pasivos.")
+                elif yield_val > 0.03: st.info("Rendimiento moderado. Está por debajo del promedio histórico de REITs, pero puede deberse a que el precio de la acción ha subido mucho.")
+                else: st.warning("Rendimiento bajo para un REIT. Solo compralo si confías en que el precio de la acción suba mucho, no por los dividendos.")
+            else:
+                st.metric("Dividend Yield", "N/D")
+                
+        with col2:
+            if pcf:
+                st.metric("P/CF Ratio (Precio / Flujo de Caja)", f"{pcf:.2f}")
+                if pcf < 15: st.success("Está barato basado en el dinero real que genera (Flujo de caja).")
+                elif pcf < 25: st.info("Precio justo basado en su flujo de caja real.")
+                else: st.warning("Está caro basado en el dinero real que genera. Podrías encontrar mejores oportunidades.")
+            else:
+                st.metric("P/CF Ratio", "N/D")
+                
+        st.markdown("---")
+        st.caption("Abajo verás los ratios tradicionales. Recuerda: **ignora el P/E Ratio** en esta industria.")
+        st.markdown("---")
+
+    # 3. SI NO HAY DATOS
     if not ratios: st.error(t("err_data").format(ticker=symbol)); return
     quote_author, quote_text = get_random_quote(lang)
     verdicts = get_simple_verdicts(ratios)
