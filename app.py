@@ -36,8 +36,8 @@ APP_URL = "https://niveshaapp-pztynp9keymapgfnrluotq.streamlit.app/" # Cuando lo
 if "lang" not in st.session_state:
     st.session_state.lang = "en"
 
-# Avatar options (Simplificado)
-AVATARS = ["👨", "👩"]
+# Avatar options (4 opciones)
+AVATARS = ["👨", "🧔", "👩", "👱‍♀️"]
 
 # ============================================
 # DATABASE & AUTH SYSTEM (Supabase)
@@ -145,7 +145,7 @@ if "logged_in" not in st.session_state:
     st.session_state.user_data = None
 
 if "selected_avatar" not in st.session_state:
-    st.session_state.selected_avatar = "🧑"
+    st.session_state.selected_avatar = "👨"
 
 # ============================================
 # TRADUCCIONES
@@ -191,7 +191,30 @@ T = {
     "profitability": {"en": "PROFITABILITY", "es": "RENTABILIDAD"},
     "price_value": {"en": "PRICE VALUE", "es": "VALOR DE PRECIO"},
     "logout": {"en": "🚪 Logout", "es": "🚪 Cerrar Sesión"},
-    
+
+    # Wall Street Analysts
+    "wall_street_title": {"en": "🏛️ What Wall Street Experts Say", "es": "🏛️ Qué dicen los expertos de Wall Street"},
+    "consensus": {"en": "Analyst Consensus", "es": "Consenso de Analistas"},
+    "strong_buy": {"en": "Strong Buy", "es": "Compra Fuerte"},
+    "buy_grade": {"en": "Buy", "es": "Compra"},
+    "hold_grade": {"en": "Hold", "es": "Mantener"},
+    "sell_grade": {"en": "Sell", "es": "Vender"},
+    "strong_sell": {"en": "Strong Sell", "es": "Venta Fuerte"},
+    "num_analysts": {"en": "Number of Analysts", "es": "Número de Analistas"},
+    "target_prices": {"en": "📈 Target Prices (Next 12 Months)", "es": "📈 Precios Objetivo (Próximos 12 Meses)"},
+    "target_low": {"en": "Lowest Target", "es": "Objetivo Mínimo"},
+    "target_mean": {"en": "Average Target", "es": "Objetivo Promedio"},
+    "target_median": {"en": "Median Target", "es": "Objetivo Mediana"},
+    "target_high": {"en": "Highest Target", "es": "Objetivo Máximo"},
+    "upside_potential": {"en": "Upside", "es": "Subida"},
+    "downside_risk": {"en": "Downside", "es": "Bajada"},
+    "recent_activity": {"en": "📋 Recent Analyst Activity", "es": "📋 Actividad Reciente de Analistas"},
+    "no_analyst_data": {"en": "No analyst data available for this stock.", "es": "No hay datos de analistas disponibles para esta acción."},
+    "action_up": {"en": "⬆️ Upgrade", "es": "⬆️ Mejora"},
+    "action_down": {"en": "⬇️ Downgrade", "es": "⬇️ Deterioro"},
+    "action_init": {"en": "🆕 Initiation", "es": "🆕 Inicio"},
+    "action_reit": {"en": "🔄 Reiterate", "es": "🔄 Reiteración"},
+    "action_reit_verb": {"en": "reiterates", "es": "reitera"},
     # Auth
     "auth_title": {"en": "Welcome to Nivesha", "es": "Bienvenido a Nivesha"},
     "auth_subtitle": {"en": "Log in or create an account to continue.", "es": "Inicia sesión o crea una cuenta para continuar."},
@@ -482,16 +505,30 @@ def show_auth_screen():
         # Selector de género/avatar
         st.markdown(f"**{t('choose_avatar')}:**")
         
-        col_hombre, col_mujer = st.columns(2)
-        with col_hombre:
-            btn_type_h = "primary" if st.session_state.selected_avatar == "👨" else "secondary"
-            if st.button("👨 Hombre", key="reg_av_hombre", type=btn_type_h, width="stretch"):
+        # Fila 1: Hombres
+        col_h1, col_h2 = st.columns(2)
+        with col_h1:
+            btn_1 = "primary" if st.session_state.selected_avatar == "👨" else "secondary"
+            if st.button("👨", key="reg_av_1", type=btn_1, width="stretch"):
                 st.session_state.selected_avatar = "👨"
                 st.rerun()
-        with col_mujer:
-            btn_type_m = "primary" if st.session_state.selected_avatar == "👩" else "secondary"
-            if st.button("👩 Mujer", key="reg_av_mujer", type=btn_type_m, width="stretch"):
+        with col_h2:
+            btn_2 = "primary" if st.session_state.selected_avatar == "🧔" else "secondary"
+            if st.button("🧔", key="reg_av_2", type=btn_2, width="stretch"):
+                st.session_state.selected_avatar = "🧔"
+                st.rerun()
+        
+        # Fila 2: Mujeres
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+            btn_3 = "primary" if st.session_state.selected_avatar == "👩" else "secondary"
+            if st.button("👩", key="reg_av_3", type=btn_3, width="stretch"):
                 st.session_state.selected_avatar = "👩"
+                st.rerun()
+        with col_m2:
+            btn_4 = "primary" if st.session_state.selected_avatar == "👱‍♀️" else "secondary"
+            if st.button("👱‍♀️", key="reg_av_4", type=btn_4, width="stretch"):
+                st.session_state.selected_avatar = "👱‍♀️"
                 st.rerun()
         
         st.markdown("---")
@@ -515,6 +552,164 @@ def show_free_notice():
     st.warning(f"**{t('free_notice_title')}** \n\n{t('free_notice_text')}")
     st.button(f"{t('pay_btn_soon')}", disabled=True, width="stretch")
     st.markdown("<br>", unsafe_allow_html=True)
+
+# ============================================
+# WALL STREET ANALYST SECTION
+# ============================================
+def display_analyst_section(symbol, info):
+    """Muestra la sección de analistas de Wall Street usando datos de yfinance"""
+    lang = st.session_state.lang
+
+    # --- Datos de consenso (ya vienen en info) ---
+    rec_key = info.get("recommendationKey")
+    rec_mean = info.get("recommendationMean")
+    num_analysts = info.get("numberOfAnalystOpinions", 0)
+
+    # --- Precios objetivo ---
+    target_low = info.get("targetLowPrice")
+    target_mean = info.get("targetMeanPrice")
+    target_median = info.get("targetMedianPrice")
+    target_high = info.get("targetHighPrice")
+    current_price = info.get("currentPrice") or info.get("regularMarketPrice")
+
+    # --- Verificar si hay al menos algún dato ---
+    has_consensus = rec_key is not None or rec_mean is not None
+    has_targets = any(v is not None for v in [target_low, target_mean, target_median, target_high])
+
+    if not has_consensus and not has_targets:
+        st.info(t("no_analyst_data"))
+        return
+
+    st.markdown(f"### {t('wall_street_title')}")
+
+    # ==========================================
+    # 1. CONSENSO DE ANALISTAS
+    # ==========================================
+    if has_consensus:
+        rec_map = {
+            "strong_buy": ("🟢🟢", "strong_buy"),
+            "buy":        ("🟢",   "buy_grade"),
+            "hold":       ("🟡",   "hold_grade"),
+            "sell":       ("🔴",   "sell_grade"),
+            "strong_sell":("🔴🔴", "strong_sell"),
+        }
+
+        # Normalizar clave (yfinance a veces manda "Strong Buy" con espacios)
+        rec_key_norm = (rec_key or "").lower().replace(" ", "_")
+        emoji, label_key = rec_map.get(rec_key_norm, ("⚪", "hold_grade"))
+
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            if rec_mean:
+                # rec_mean: 1 = Strong Buy ... 5 = Strong Sell
+                # Lo invertimos para que 1=100% (muy alcista) y 5=0%
+                bar_val = max(0.0, min(1.0, (5 - rec_mean) / 4))
+                st.progress(bar_val, text=f"{emoji} {t(label_key)}")
+            else:
+                st.markdown(f"**{emoji} {t(label_key)}**")
+        with col2:
+            if num_analysts:
+                st.metric(t("num_analysts"), f"{int(num_analysts)}")
+
+        st.markdown("---")
+
+    # ==========================================
+    # 2. PRECIOS OBJETIVO
+    # ==========================================
+    if has_targets and current_price:
+        st.markdown(f"**{t('target_prices')}**")
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            if target_low:
+                pct = ((target_low - current_price) / current_price) * 100
+                st.metric(t("target_low"), f"${target_low:.2f}", f"{pct:+.1f}%")
+
+        with col2:
+            if target_mean:
+                pct = ((target_mean - current_price) / current_price) * 100
+                label = "upside_potential" if pct >= 0 else "downside_risk"
+                st.metric(t("target_mean"), f"${target_mean:.2f}", f"{pct:+.1f}% {t(label)}")
+
+        with col3:
+            if target_median:
+                pct = ((target_median - current_price) / current_price) * 100
+                st.metric(t("target_median"), f"${target_median:.2f}", f"{pct:+.1f}%")
+
+        with col4:
+            if target_high:
+                pct = ((target_high - current_price) / current_price) * 100
+                st.metric(t("target_high"), f"${target_high:.2f}", f"{pct:+.1f}%")
+
+        st.markdown("---")
+
+    # ==========================================
+    # 3. ACTIVIDAD RECIENTE (Upgrades/Downgrades)
+    # ==========================================
+    try:
+        ticker = yf.Ticker(symbol)
+        upgrades = ticker.upgrades_downgrades
+
+        if upgrades is not None and not upgrades.empty:
+            # --- FILTROS ---
+            upgrades = upgrades[upgrades["ToGrade"].notna()]
+            upgrades = upgrades[upgrades["ToGrade"].astype(str).str.strip() != ""]
+
+            if not upgrades.empty:
+                cutoff = pd.Timestamp.now() - pd.DateOffset(months=12)
+                upgrades = upgrades[upgrades.index >= cutoff]
+
+            if not upgrades.empty:
+                st.markdown(f"**{t('recent_activity')}**")
+
+                # Ranking de calificaciones (menor = mejor)
+                grade_rank = {
+                    "strong buy": 1, "strong-buy": 1,
+                    "buy": 2, "outperform": 2, "overweight": 2,
+                    "hold": 3, "neutral": 3, "equal-weight": 3, "market perform": 3, "sector perform": 3,
+                    "underperform": 4, "underweight": 4, "market underperform": 4,
+                    "sell": 5, "strong sell": 5,
+                }
+
+                recent = upgrades.tail(5).iloc[::-1]
+
+                for date, row in recent.iterrows():
+                    firm = str(row.get("Firm", "N/A"))
+                    to_grade = str(row.get("ToGrade", "N/A"))
+                    from_grade = str(row.get("FromGrade", ""))
+
+                    # Limpiar nan
+                    if from_grade == "nan" or not from_grade.strip():
+                        from_grade = ""
+
+                    date_str = date.strftime("%Y-%m-%d") if hasattr(date, "strftime") else str(date)
+
+                    # Inferir la acción desde las calificaciones
+                    if not from_grade:
+                        a_emoji, a_stype = "🆕", "info"
+                        line = f"{a_emoji} **{firm}**: **{to_grade}** — {date_str}"
+                    elif from_grade.lower().strip() == to_grade.lower().strip():
+                        a_emoji, a_stype = "🔄", "info"
+                        line = f"{a_emoji} **{firm}**: **{to_grade}** ({t('action_reit_verb')}) — {date_str}"
+                    else:
+                        # Comparar ranking para saber si es upgrade o downgrade
+                        from_rank = grade_rank.get(from_grade.lower().strip(), 3)
+                        to_rank = grade_rank.get(to_grade.lower().strip(), 3)
+                        if to_rank < from_rank:
+                            a_emoji, a_stype = "⬆️", "success"
+                        else:
+                            a_emoji, a_stype = "⬇️", "error"
+                        line = f"{a_emoji} **{firm}**: {from_grade} → **{to_grade}** — {date_str}"
+
+                    if a_stype == "success":
+                        st.success(line)
+                    elif a_stype == "error":
+                        st.error(line)
+                    else:
+                        st.info(line)
+    except Exception:
+        pass
 
 # ============================================
 # STOCK CARD DISPLAY
@@ -639,6 +834,12 @@ def display_stock_card(symbol):
         if v_key == "great_value": st.success(f"**{v_emoji} {v_title}**\n\n### {v_verdict}\n{v_text}")
         elif v_key == "fair_price": st.warning(f"**{v_emoji} {v_title}**\n\n### {v_verdict}\n{v_text}")
         else: st.error(f"**{v_emoji} {v_title}**\n\n### {v_verdict}\n{v_text}")
+    st.markdown("---")
+
+    # --- NUEVA SECCIÓN: Wall Street Analysts ---
+    with st.expander(t("wall_street_title"), expanded=True):
+        display_analyst_section(symbol, info)
+
     st.markdown("---")
     st.info(f"💡 **{quote_author}**: *\"{quote_text}\"*")
 
