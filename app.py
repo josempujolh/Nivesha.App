@@ -71,7 +71,7 @@ def register_user(email, password, first_name, last_name, avatar):
 
 def authenticate_user(email, password):
     try:
-        response = supabase.table("users").select("id, password, is_premium, first_name, last_name, avatar").eq("email", email).execute()
+        response = supabase.table("users").select("id, password, is_premium, first_name, last_name, avatar, missions").eq("email", email).execute()
         if not response.data:
             return None
         
@@ -79,7 +79,8 @@ def authenticate_user(email, password):
         if verify_password(password, user["password"]):
             return {
                 "id": user["id"], "email": email, "is_premium": bool(user["is_premium"]),
-                "first_name": user["first_name"], "last_name": user["last_name"], "avatar": user["avatar"]
+                "first_name": user["first_name"], "last_name": user["last_name"], "avatar": user["avatar"],
+                "missions": user.get("missions")
             }
         return None
     except:
@@ -146,6 +147,19 @@ if "logged_in" not in st.session_state:
 
 if "selected_avatar" not in st.session_state:
     st.session_state.selected_avatar = "👨"
+
+# Misiones de onboarding (guía para usuarios nuevos)
+if "missions" not in st.session_state:
+    st.session_state.missions = {
+        "analyze": False,
+        "watchlist": False,
+        "versus": False,
+        "ai": False,
+        "analysts": False,
+        "lang": False,
+    }
+if "onboarding_finished" not in st.session_state:
+    st.session_state.onboarding_finished = False
 
 # ============================================
 # TRADUCCIONES
@@ -236,6 +250,23 @@ T = {
     "free_notice_text": {"en": "You are currently using the Free version. You will have to upgrade to Premium to analyze unlimited stocks, use Versus Mode, and keep your personalized Watchlist soon.", "es": "Actualmente estás usando la versión Gratuita. Próximamente deberás actualizar a Premium para analizar acciones ilimitadas, usar el Modo Versus y guardar tu Watchlist personalizada."},
     "pay_btn_soon": {"en": "💳 Upgrade to Premium - $2/month (Coming Soon)", "es": "💳 Mejorar a Premium - $2/mes (Próximamente)"},
 
+    # Misiones de Onboarding
+    "missions_title": {"en": "🎯 Your Journey", "es": "🎯 Tu Recorrido"},
+    "mission_completed": {"en": "Mission completed!", "es": "¡Misión completada!"},
+    "missions_done": {"en": "🏆 All missions completed! You're officially a Nivesha expert.", "es": "🏆 ¡Completaste todas las misiones! Ya eres oficialmente experto en Nivesha."},
+    "mission_analyze": {"en": "📊 Analyze your first stock", "es": "📊 Analiza tu primera acción"},
+    "mission_hint_analyze": {"en": "Go to 'Single Stock Check', type a ticker (e.g. AAPL) and press 'Check Stock'.", "es": "Ve a 'Análisis Individual', escribe un ticker (ej. AAPL) y presiona 'Analizar Acción'."},
+    "mission_watchlist": {"en": "⭐ Add a stock to your Watchlist", "es": "⭐ Añade una acción a tu Watchlist"},
+    "mission_hint_watchlist": {"en": "Type a ticker in the Watchlist box and press 'Add to List'.", "es": "Escribe un ticker en el recuadro de la Watchlist y presiona 'Añadir a la Lista'."},
+    "mission_versus": {"en": "⚔️ Make two stocks fight", "es": "⚔️ Haz pelear dos acciones"},
+    "mission_hint_versus": {"en": "Open 'Versus Mode', pick two stocks and press FIGHT!", "es": "Abre el 'Modo Versus', elige dos acciones y presiona ¡LUCHAR!"},
+    "mission_ai": {"en": "🤖 Ask the AI a question", "es": "🤖 Pregúntale algo a la IA"},
+    "mission_hint_ai": {"en": "Ask the AI assistant any investing question you have.", "es": "Pregúntale al asistente IA cualquier duda que tengas."},
+    "mission_analysts": {"en": "🏛️ See what Wall Street experts say", "es": "🏛️ Mira lo que dicen los expertos de Wall Street"},
+    "mission_hint_analysts": {"en": "Analyze a popular stock (e.g. AAPL) and check the experts section below the three verdicts.", "es": "Analiza una acción popular (ej. AAPL) y revisa la sección de expertos debajo de los tres veredictos."},
+    "mission_lang": {"en": "🌐 Try the app in the other language", "es": "🌐 Prueba la app en el otro idioma"},
+    "mission_hint_lang": {"en": "Switch between English and Spanish with the language selector.", "es": "Cambia entre español e inglés con el selector de idioma."},
+
     # Veredictos
     "very_safe": {"en": "Very Safe", "es": "Muy Segura"},
     "very_safe_t": {"en": "This company is a financial fortress. It has much more cash and short-term assets than debts, meaning it won't struggle to pay bills even if the economy stops. Its debt level is very low compared to its equity. It's a highly stable business that can withstand crises without bankruptcy risk.", "es": "Esta empresa es una fortaleza financiera. Tiene mucho más efectivo y activos a corto plazo que deudas, lo que significa que no tendrá problemas para pagar sus facturas incluso si la economía se detiene. Además, su nivel de deuda es muy bajo comparado con su propio capital. Es un negocio altamente estable que puede soportar crisis sin riesgo de quiebra."},
@@ -287,6 +318,57 @@ def get_random_quote(lang):
 
 def t(key):
     return T[key][st.session_state.lang]
+
+# ============================================
+# MISIONES DE ONBOARDING (Guía de usuario)
+# ============================================
+MISSION_ORDER = ["analyze", "watchlist", "versus", "ai", "analysts", "lang"]
+
+def complete_mission(key):
+    """Marca una misión como completada, avisa al usuario y guarda el progreso."""
+    if st.session_state.missions.get(key, False):
+        return  # Ya estaba completada: no repetir
+    st.session_state.missions[key] = True
+    st.toast(t("mission_completed"), icon="🎉")
+
+    # Guardar progreso en Supabase (solo si hay sesión iniciada)
+    if st.session_state.logged_in:
+        try:
+            supabase.table("users").update({
+                "missions": json.dumps(st.session_state.missions)
+            }).eq("id", st.session_state.user_data["id"]).execute()
+        except:
+            pass
+
+    # ¿Completó todas? ¡Celebración! 🎈
+    if all(st.session_state.missions.values()) and not st.session_state.onboarding_finished:
+        st.session_state.onboarding_finished = True
+        st.balloons()
+
+def show_missions_panel():
+    """Panel pequeño con el progreso de misiones, para la barra lateral."""
+    missions = st.session_state.missions
+    done = sum(1 for completed in missions.values() if completed)
+    total = len(missions)
+
+    with st.sidebar:
+        st.markdown(f"### {t('missions_title')}")
+        st.progress(done / total, text=f"{done} / {total}")
+
+        hint_shown = False
+        for key in MISSION_ORDER:
+            label = t(f"mission_{key}")
+            if missions[key]:
+                st.markdown(f"✅ ~~{label}~~")
+            else:
+                st.markdown(f"⬜ {label}")
+                # Solo la primera misión pendiente muestra su pista
+                if not hint_shown:
+                    st.info(t(f"mission_hint_{key}"))
+                    hint_shown = True
+
+        if done == total:
+            st.success(t("missions_done"))
 
 # ============================================
 # WATCHLIST
@@ -488,6 +570,15 @@ def show_auth_screen():
                 if user:
                     st.session_state.logged_in = True
                     st.session_state.user_data = user
+                    # Cargar misiones guardadas del usuario
+                    if user.get("missions"):
+                        try:
+                            saved = json.loads(user["missions"])
+                            for m in st.session_state.missions:
+                                if m in saved:
+                                    st.session_state.missions[m] = bool(saved[m])
+                        except:
+                            pass
                     st.rerun()
                 else: st.error(t("err_invalid_creds"))
                 
@@ -581,6 +672,7 @@ def display_analyst_section(symbol, info):
         return
 
     st.markdown(f"### {t('wall_street_title')}")
+    complete_mission("analysts")
 
     # ==========================================
     # 1. CONSENSO DE ANALISTAS
@@ -904,12 +996,20 @@ def main():
             with col_en:
                 btn_type_en = "primary" if lang == "en" else "secondary"
                 if st.button("🇺🇸 English", key="lang_en", width="stretch", type=btn_type_en):
-                    st.session_state.lang = "en"; st.rerun()
+                    if lang != "en":
+                        st.session_state.lang = "en"
+                        complete_mission("lang")
+                    st.rerun()
             with col_es:
                 btn_type_es = "primary" if lang == "es" else "secondary"
                 if st.button("🇪🇸 Español", key="lang_es", width="stretch", type=btn_type_es):
-                    st.session_state.lang = "es"; st.rerun()
+                    if lang != "es":
+                        st.session_state.lang = "es"
+                        complete_mission("lang")
+                    st.rerun()
             st.markdown("---")
+            show_missions_panel()         
+            st.markdown("---")             
             st.header(t("watchlist_header"))
             with st.form("add_watchlist_form", clear_on_submit=True):
                 new_ticker = st.text_input(t("add_ticker"), placeholder=t("placeholder_ticker"))
@@ -920,6 +1020,7 @@ def main():
                         st.session_state.watchlist.append(clean_ticker)
                         save_watchlist(st.session_state.watchlist)
                         st.success(t("added_msg").format(ticker=clean_ticker))
+                        complete_mission("watchlist")
                     else: st.warning(t("already_in_list").format(ticker=clean_ticker))
             st.markdown("---")
             if not st.session_state.watchlist: st.info(t("empty_list"))
@@ -947,6 +1048,7 @@ def main():
             symbol_input = st.text_input(t("enter_ticker"), value=st.session_state.active_ticker, key="single_input")
             if st.button(t("check_stock"), type="primary", key="single_btn"):
                 display_stock_card(symbol_input.strip().upper())
+                complete_mission("analyze")
                 with st.expander(t("price_history")):
                     try:
                         hist = yf.Ticker(symbol_input.strip().upper()).history(period="2y")
@@ -985,6 +1087,7 @@ def main():
                     elif score_b > score_a: winner_text = t("wins_by").format(winner=fighter_b.strip().upper(), diff=score_b - score_a)
                     else: winner_text = t("tie")
                     st.success(winner_text); st.divider()
+                    complete_mission("versus")
                     col_left, col_right = st.columns(2)
                     with col_left: display_stock_card(fighter_a.strip().upper())
                     with col_right: display_stock_card(fighter_b.strip().upper())
@@ -1008,6 +1111,7 @@ def main():
                                 preamble=f"Eres un asistente financiero amigable. Responde en {st.session_state.lang}."
                             )
                             st.success(response.text)
+                            complete_mission("ai")
                         except Exception as e:
                             st.error(f"Error con la IA: {e}")
 
