@@ -53,6 +53,11 @@ def verify_password(password, hashed_password):
     return hash_obj.hexdigest() == hashed
 
 def register_user(email, password, first_name, last_name, avatar):
+    email = email.strip().lower()
+    if not email or "@" not in email:
+        return "INVALID_EMAIL"
+    if len(password) < 6:
+        return "WEAK_PASSWORD"
     try:
         hashed_pw = hash_password(password)
         supabase.table("users").insert({
@@ -62,32 +67,36 @@ def register_user(email, password, first_name, last_name, avatar):
             "last_name": last_name, 
             "avatar": avatar
         }).execute()
-        return True
+        return "OK"
     except Exception as e:
-        # Si el correo ya existe, Supabase da error de duplicado
-        if "duplicate" in str(e).lower() or "unique" in str(e).lower():
-            return False
-        return False
+        msg = str(e).lower()
+        if "duplicate" in msg or "unique" in msg:
+            return "DUPLICATE"
+        print(f"Error de registro: {e}")
+        return "SERVICE_DOWN"
 
 def authenticate_user(email, password):
+    email = email.strip().lower()
     try:
         response = supabase.table("users").select("id, password, is_premium, first_name, last_name, avatar, missions").eq("email", email).execute()
-        if not response.data:
-            return None
-        
-        user = response.data[0] # Tomar el primer resultado
-        if verify_password(password, user["password"]):
-            return {
-                "id": user["id"], "email": email, "is_premium": bool(user["is_premium"]),
-                "first_name": user["first_name"], "last_name": user["last_name"], "avatar": user["avatar"],
-                "missions": user.get("missions")
-            }
+    except Exception as e:
+        print(f"Error de conexión con Supabase: {e}")
+        return "SERVICE_DOWN"
+    if not response.data:
         return None
-    except:
-        return None
+    user = response.data[0]
+    if verify_password(password, user["password"]):
+        return {
+            "id": user["id"], "email": email, "is_premium": bool(user["is_premium"]),
+            "first_name": user["first_name"], "last_name": user["last_name"], "avatar": user["avatar"],
+            "missions": user.get("missions")
+        }
+    return None
 
 def send_reset_email(email):
     try:
+        email = email.strip().lower()
+
         # 1. Generar token y fecha de expiración (15 minutos)
         token = secrets.token_urlsafe(16)
         exp_time = datetime.now() + timedelta(minutes=15)
@@ -244,6 +253,9 @@ T = {
     "err_invalid_creds": {"en": "Invalid email or password.", "es": "Correo o contraseña incorrectos."},
     "reg_success": {"en": "Account created successfully! Please log in.", "es": "¡Cuenta creada exitosamente! Por favor inicia sesión."},
     "choose_avatar": {"en": "Choose your Avatar", "es": "Elige tu Avatar"},
+    "err_service_down": {"en": "🛠️ The service is temporarily unavailable. Please try again in a few minutes.", "es": "🛠️ El servicio no está disponible en este momento. Intenta de nuevo en unos minutos."},
+    "err_weak_password": {"en": "Password must be at least 6 characters.", "es": "La contraseña debe tener al menos 6 caracteres."},
+    "err_invalid_email": {"en": "Please enter a valid email address.", "es": "Por favor ingresa un correo válido."},
     
     # Free Version Notice
     "free_notice_title": {"en": "👋 Welcome to the Free Beta!", "es": "¡Bienvenido a la Beta Gratuita!"},
@@ -567,10 +579,11 @@ def show_auth_screen():
             password = st.text_input(t("password"), type="password", key="login_pw")
             if st.form_submit_button(t("login_btn"), type="primary", width="stretch"):
                 user = authenticate_user(email, password)
-                if user:
+                if user == "SERVICE_DOWN":
+                    st.error(t("err_service_down"))
+                elif user:
                     st.session_state.logged_in = True
                     st.session_state.user_data = user
-                    # Cargar misiones guardadas del usuario
                     if user.get("missions"):
                         try:
                             saved = json.loads(user["missions"])
@@ -580,7 +593,8 @@ def show_auth_screen():
                         except:
                             pass
                     st.rerun()
-                else: st.error(t("err_invalid_creds"))
+                else:
+                    st.error(t("err_invalid_creds"))
                 
         # Sección de recuperar clave (Fuera del formulario de login)
         with st.expander("¿Olvidaste tu clave?"):
@@ -634,10 +648,17 @@ def show_auth_screen():
             password = st.text_input(t("password"), type="password", key="reg_pw")
             
             if st.form_submit_button(t("register_btn"), type="primary", width="stretch"):
-                if register_user(email, password, first_name, last_name, st.session_state.selected_avatar):
+                result = register_user(email, password, first_name, last_name, st.session_state.selected_avatar)
+                if result == "OK":
                     st.success(t("reg_success"))
-                else: 
+                elif result == "DUPLICATE":
                     st.error(t("err_user_exists"))
+                elif result == "WEAK_PASSWORD":
+                    st.error(t("err_weak_password"))
+                elif result == "INVALID_EMAIL":
+                    st.error(t("err_invalid_email"))
+                else:
+                    st.error(t("err_service_down"))
 
 def show_free_notice():
     st.warning(f"**{t('free_notice_title')}** \n\n{t('free_notice_text')}")
