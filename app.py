@@ -16,7 +16,6 @@ from datetime import datetime, timedelta
 # CONFIGURATION
 # ============================================
 st.set_page_config(page_title="Nivesha", page_icon="logo.png", layout="wide")
-WATCHLIST_FILE = "my_watchlist.json"
 
 # Leer claves de los secretos
 AV_KEY = st.secrets["AV_KEY"]
@@ -94,13 +93,16 @@ def authenticate_user(email, password):
     return None
 
 def send_reset_email(email):
+    email = email.strip().lower()
     try:
-        email = email.strip().lower()
+        # 0. Verificar que el correo exista en la base
+        check = supabase.table("users").select("id").eq("email", email).execute()
+        if not check.data:
+            return "NOT_FOUND"
 
         # 1. Generar token y fecha de expiración (15 minutos)
         token = secrets.token_urlsafe(16)
-        exp_time = datetime.now() + timedelta(minutes=15)
-        exp_str = exp_time.strftime("%Y-%m-%d %H:%M:%S")
+        exp_str = (datetime.now() + timedelta(minutes=15)).strftime("%Y-%m-%d %H:%M:%S")
 
         # 2. Guardar en Supabase
         supabase.table("users").update({
@@ -108,10 +110,10 @@ def send_reset_email(email):
             "reset_expiration": exp_str
         }).eq("email", email).execute()
 
-        # 3. Enviar correo (Método directo sin instalar librerías)
+        # 3. Enviar correo
         reset_link = f"{APP_URL}/?reset_token={token}"
         payload = {
-            "from": "Nivesha App <onboarding@resend.dev>",
+            "from": f"Nivesha App <{st.secrets['RESEND_FROM']}>",
             "to": [email],
             "subject": "Recupera tu clave de Nivesha",
             "html": f"<h2>Hola,</h2><p>Haz clic en el siguiente enlace para cambiar tu clave (vence en 15 minutos):</p><p><a href='{reset_link}' style='background:#0a3d6b;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;'>Cambiar mi clave</a></p>"
@@ -120,11 +122,14 @@ def send_reset_email(email):
             "Authorization": f"Bearer {st.secrets['RESEND_KEY']}",
             "Content-Type": "application/json"
         }
-        requests.post("https://api.resend.com/emails", json=payload, headers=headers)
-        return True
+        r = requests.post("https://api.resend.com/emails", json=payload, headers=headers, timeout=10)
+        if r.status_code == 200:
+            return "SENT"
+        print(f"Error de Resend: {r.status_code} - {r.text}")
+        return "ERROR"
     except Exception as e:
         print(f"Error enviando correo: {e}")
-        return False
+        return "ERROR"
 
 def verify_reset_token(token):
     if not token: return None
@@ -169,6 +174,20 @@ if "missions" not in st.session_state:
     }
 if "onboarding_finished" not in st.session_state:
     st.session_state.onboarding_finished = False
+
+def reset_user_state():
+    """Limpia el estado de sesión al cerrar sesión, para que el próximo usuario (o uno nuevo) empiece de cero."""
+    st.session_state.missions = {
+        "analyze": False,
+        "watchlist": False,
+        "versus": False,
+        "ai": False,
+        "analysts": False,
+        "lang": False,
+    }
+    st.session_state.onboarding_finished = False
+    st.session_state.watchlist = []
+    st.session_state.selected_avatar = "👨"
 
 # ============================================
 # TRADUCCIONES
@@ -256,6 +275,12 @@ T = {
     "err_service_down": {"en": "🛠️ The service is temporarily unavailable. Please try again in a few minutes.", "es": "🛠️ El servicio no está disponible en este momento. Intenta de nuevo en unos minutos."},
     "err_weak_password": {"en": "Password must be at least 6 characters.", "es": "La contraseña debe tener al menos 6 caracteres."},
     "err_invalid_email": {"en": "Please enter a valid email address.", "es": "Por favor ingresa un correo válido."},
+    "forgot_pw": {"en": "🔑 Forgot your password?", "es": "🔑 ¿Olvidaste tu clave?"},
+    "your_email": {"en": "Your registered email", "es": "Tu correo registrado"},
+    "send_reset_btn": {"en": "Send recovery link", "es": "Enviar enlace de recuperación"},
+    "reset_sent": {"en": "✅ Link sent! Check your inbox (and Spam folder).", "es": "✅ ¡Enlace enviado! Revisa tu correo (y la carpeta de Spam)."},
+    "reset_not_found": {"en": "That email is not registered in Nivesha.", "es": "Ese correo no está registrado en Nivesha."},
+    "reset_error": {"en": "Could not send the email. Please try again later.", "es": "No se pudo enviar el correo. Intenta más tarde."},
     
     # Free Version Notice
     "free_notice_title": {"en": "👋 Welcome to the Free Beta!", "es": "¡Bienvenido a la Beta Gratuita!"},
@@ -386,19 +411,26 @@ def show_missions_panel():
 # WATCHLIST
 # ============================================
 def load_watchlist():
-    try:
-        if os.path.exists(WATCHLIST_FILE):
-            with open(WATCHLIST_FILE, "r") as f: return json.load(f)
-    except: pass
+    """Carga la watchlist del usuario desde Supabase."""
+    if st.session_state.get("logged_in") and st.session_state.user_data:
+        try:
+            resp = supabase.table("users").select("watchlist").eq("id", st.session_state.user_data["id"]).execute()
+            if resp.data and resp.data[0].get("watchlist"):
+                return json.loads(resp.data[0]["watchlist"])
+        except Exception as e:
+            print(f"Error cargando watchlist: {e}")
     return []
 
 def save_watchlist(wl):
-    try:
-        with open(WATCHLIST_FILE, "w") as f: json.dump(wl, f)
-    except: pass
+    """Guarda la watchlist del usuario en Supabase."""
+    if st.session_state.get("logged_in") and st.session_state.user_data:
+        try:
+            supabase.table("users").update({"watchlist": json.dumps(wl)}).eq("id", st.session_state.user_data["id"]).execute()
+        except Exception as e:
+            print(f"Error guardando watchlist: {e}")
 
 if "watchlist" not in st.session_state:
-    st.session_state.watchlist = load_watchlist()
+    st.session_state.watchlist = []
 
 # ============================================
 # BACKEND DATA
@@ -592,19 +624,24 @@ def show_auth_screen():
                                     st.session_state.missions[m] = bool(saved[m])
                         except:
                             pass
+                    # Cargar watchlist del usuario desde Supabase
+                    st.session_state.watchlist = load_watchlist()
                     st.rerun()
                 else:
                     st.error(t("err_invalid_creds"))
                 
         # Sección de recuperar clave (Fuera del formulario de login)
-        with st.expander("¿Olvidaste tu clave?"):
-            reset_email = st.text_input("Tu correo registrado", key="reset_email_input")
-            if st.button("Enviar enlace de recuperación"):
+        with st.expander(t("forgot_pw")):
+            reset_email = st.text_input(t("your_email"), key="reset_email_input")
+            if st.button(t("send_reset_btn")):
                 if reset_email:
-                    if send_reset_email(reset_email):
-                        st.success("¡Enlace enviado! Revisa tu correo (y la carpeta de Spam).")
+                    result = send_reset_email(reset_email)
+                    if result == "SENT":
+                        st.success(t("reset_sent"))
+                    elif result == "NOT_FOUND":
+                        st.error(t("reset_not_found"))
                     else:
-                        st.error("No se pudo enviar. Asegúrate de que el correo esté registrado.")
+                        st.error(t("reset_error"))
                 
     with tab_register:
         # Selector de género/avatar
@@ -1010,6 +1047,7 @@ def main():
             if st.button(t("logout"), width="stretch"):
                 st.session_state.logged_in = False
                 st.session_state.user_data = None
+                reset_user_state() 
                 st.rerun()
             st.markdown("---")
             
