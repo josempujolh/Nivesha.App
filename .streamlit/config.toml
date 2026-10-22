@@ -1,0 +1,7 @@
+# Configuracion de tema de Nivesha
+[theme]
+primaryColor = "#52b788"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#EBEFFF"
+textColor = "#253355"
+font = "sans serif"
