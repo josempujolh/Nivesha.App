@@ -8,6 +8,7 @@ import textwrap
 import random
 import hashlib
 import secrets
+import base64
 from supabase import create_client, Client
 import cohere
 from datetime import datetime, timedelta
@@ -305,7 +306,7 @@ def reset_user_state():
 # TRADUCCIONES
 # ============================================
 T = {
-    "app_subtitle": {"en": "Is it a good investment? Let's find out in plain English.", "es": "¿Es una buena inversión? Descubrámoslo en palabras simples."},
+    "app_subtitle": {"en": "Is it a good investment?<br>Let's find out in plain English.", "es": "¿Es una buena inversión?<br>Descubrámoslo en palabras simples."},
     "watchlist_header": {"en": "⭐ My Watchlist", "es": "⭐ Mi Lista de Seguimiento"},
     "add_ticker": {"en": "Add Ticker", "es": "Añadir Ticker"},
     "placeholder_ticker": {"en": "e.g. TSLA", "es": "ej. TSLA"},
@@ -1124,17 +1125,44 @@ def main():
             st.error("El enlace es inválido o ha expirado. Pide uno nuevo.")
         return # Detiene la app para no mostrar el login normal
     
-    # Logo centrado y mas pequeno (180px, cerca del tamano nativo 192px del archivo,
-    # para evitar que se vea pixelado). El titulo "Nivesha" se elimina porque ya el
-    # logo identifica la app; el subtitulo va debajo, centrado.
-    col_left, col_center, col_right = st.columns([1, 1, 1])
-    with col_center:
-        st.image("logo.png", width=180)                   # ← logo a 180px (no pixelado, centrado)
-    st.markdown(
-        f"<p style='text-align: center; color: rgba(37, 51, 85, 0.6); "
-        f"font-size: 17px; margin-top: -5px;'>{t('app_subtitle')}</p>",  # ← subtítulo centrado abajo
-        unsafe_allow_html=True
-    )
+    # --- Header de Nivesha ---
+    # Logo perfectamente centrado usando HTML+CSS (st.columns no centra bien en
+    # todos los navegadores / dispositivos moviles). El logo se carga como base64
+    # para incrustarlo en el HTML y poder controlar el centrado via flexbox.
+    # Tamano: 130px (mas pequeno que el nativo de 192px, lo que evita pixelado
+    # incluso en pantallas de smartphone con alta densidad de pixeles).
+    # Subtitulo: 2 lineas centradas debajo del logo (la traduccion ya tiene <br>).
+    try:
+        with open("logo.png", "rb") as _logo_file:
+            _logo_b64 = base64.b64encode(_logo_file.read()).decode("utf-8")
+        st.markdown(
+            f"""
+            <div style="display: flex; flex-direction: column; align-items: center;
+                        justify-content: center; text-align: center;
+                        margin: 0 auto; padding: 0;">
+                <img src="data:image/png;base64,{_logo_b64}"
+                     alt="Nivesha"
+                     width="130"
+                     style="max-width: 130px; height: auto; display: block; margin: 0 auto;" />
+            </div>
+            <p style="text-align: center; color: rgba(37, 51, 85, 0.6);
+                      font-size: 17px; line-height: 1.5;
+                      margin-top: 10px; margin-bottom: 0;">
+                {t('app_subtitle')}
+            </p>
+            """,
+            unsafe_allow_html=True
+        )
+    except FileNotFoundError:
+        # Fallback: si por algun motivo no encuentra logo.png, usa st.image normal
+        col_l, col_c, col_r = st.columns([2, 1, 2])
+        with col_c:
+            st.image("logo.png", width=130)
+        st.markdown(
+            f"<p style='text-align: center; color: rgba(37, 51, 85, 0.6); "
+            f"font-size: 17px; line-height: 1.5; margin-top: 10px;'>{t('app_subtitle')}</p>",
+            unsafe_allow_html=True
+        )
     st.divider()
     
     if not st.session_state.logged_in:
