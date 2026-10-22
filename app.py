@@ -17,6 +17,118 @@ from datetime import datetime, timedelta
 # ============================================
 st.set_page_config(page_title="Nivesha", page_icon="logo.png", layout="wide")
 
+# ============================================
+# INJECTION CSS: Colores oficiales de Nivesha
+# ============================================
+st.markdown("""
+<style>
+/* --- Variables de la paleta Nivesha --- */
+:root {
+    --nivesha-blue:        #253355;
+    --nivesha-green:       #52b788;
+    --nivesha-yellow:      #F7CF71;
+    --nivesha-light-blue:  #EBEFFF;
+    --nivesha-white:       #FFFFFF;
+}
+
+/* --- Advertencias (st.warning) en amarillo Nivesha #F7CF71 --- */
+div[data-testid="stAlert-containerWarning"] {
+    background-color: rgba(247, 207, 113, 0.25) !important;
+    border-left: 5px solid #F7CF71 !important;
+    color: #253355 !important;
+}
+div[data-testid="stAlert-containerWarning"] * {
+    color: #253355 !important;
+}
+/* Fallback para versiones recientes de Streamlit */
+div[data-testid="stAlert"] warning,
+.stAlert-warning,
+[data-baseweb="notification"][kind="warning"] {
+    background-color: rgba(247, 207, 113, 0.25) !important;
+}
+
+/* --- Exito (st.success) con verde Nivesha #52b788 --- */
+div[data-testid="stAlert-containerSuccess"] {
+    background-color: rgba(82, 183, 136, 0.15) !important;
+    border-left: 5px solid #52b788 !important;
+    color: #253355 !important;
+}
+div[data-testid="stAlert-containerSuccess"] * {
+    color: #253355 !important;
+}
+
+/* --- Info (st.info) con azul claro Nivesha --- */
+div[data-testid="stAlert-containerInfo"] {
+    background-color: rgba(235, 239, 255, 0.6) !important;
+    border-left: 5px solid #253355 !important;
+    color: #253355 !important;
+}
+
+/* --- Boton primario con verde Nivesha #52b788 (refuerzo del tema) --- */
+.stButton > button[kind="primary"],
+.stButton > button[data-testid="stBaseButton-primary"] {
+    background-color: #52b788 !important;
+    border-color: #52b788 !important;
+    color: white !important;
+    font-weight: 600 !important;
+}
+.stButton > button[kind="primary"]:hover,
+.stButton > button[data-testid="stBaseButton-primary"]:hover {
+    background-color: #3da06e !important;
+    border-color: #3da06e !important;
+    color: white !important;
+}
+
+/* --- Pestana activa: acento amarillo #F7CF71 --- */
+.stTabs [data-baseweb="tab-list"] [aria-selected="true"] {
+    border-bottom-color: #F7CF71 !important;
+    color: #253355 !important;
+    font-weight: 600;
+}
+.stTabs [data-baseweb="tab-list"] [aria-selected="true"] > div {
+    color: #253355 !important;
+}
+
+/* --- Barra de progreso con verde Nivesha #52b788 --- */
+.stProgress > div > div > div {
+    background-color: #52b788 !important;
+}
+
+/* --- Metricas: valor numerico en azul Nivesha --- */
+[data-testid="stMetricValue"] {
+    color: #253355 !important;
+    font-weight: 700 !important;
+}
+[data-testid="stMetricDelta"] {
+    color: #52b788 !important;
+}
+
+/* --- Sidebar: asegurar fondo azul claro --- */
+section[data-testid="stSidebar"] {
+    background-color: #EBEFFF !important;
+}
+
+/* --- Enlaces con verde Nivesha --- */
+a {
+    color: #52b788 !important;
+}
+a:hover {
+    color: #3da06e !important;
+}
+
+/* --- Headings h1, h2, h3 con azul Nivesha --- */
+h1, h2, h3 {
+    color: #253355 !important;
+}
+
+/* --- Acento amarillo en el divider de la cabecera --- */
+hr {
+    border-color: rgba(247, 207, 113, 0.6) !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+
 # Leer claves de los secretos
 AV_KEY = st.secrets["AV_KEY"]
 AV_URL = "https://www.alphavantage.co/query"
@@ -35,8 +147,8 @@ APP_URL = "https://niveshaapp-pztynp9keymapgfnrluotq.streamlit.app/" # Cuando lo
 if "lang" not in st.session_state:
     st.session_state.lang = "en"
 
-# Avatar options (4 opciones)
-AVATARS = ["👨", "🧔", "👩", "👱‍♀️"]
+# Opciones de género para el registro
+GENDER_OPTIONS = ["Masculino", "Femenino"]
 
 # ============================================
 # DATABASE & AUTH SYSTEM (Supabase)
@@ -116,7 +228,7 @@ def send_reset_email(email):
             "from": f"Nivesha App <{st.secrets['RESEND_FROM']}>",
             "to": [email],
             "subject": "Recupera tu clave de Nivesha",
-            "html": f"<h2>Hola,</h2><p>Haz clic en el siguiente enlace para cambiar tu clave (vence en 15 minutos):</p><p><a href='{reset_link}' style='background:#0a3d6b;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;'>Cambiar mi clave</a></p>"
+            "html": f"<h2>Hola,</h2><p>Haz clic en el siguiente enlace para cambiar tu clave (vence en 15 minutos):</p><p><a href='{reset_link}' style='background:#253355;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;'>Cambiar mi clave</a></p>"
         }
         headers = {
             "Authorization": f"Bearer {st.secrets['RESEND_KEY']}",
@@ -160,7 +272,7 @@ if "logged_in" not in st.session_state:
     st.session_state.user_data = None
 
 if "selected_avatar" not in st.session_state:
-    st.session_state.selected_avatar = "👨"
+    st.session_state.selected_avatar = "Masculino"
 
 # Misiones de onboarding (guía para usuarios nuevos)
 if "missions" not in st.session_state:
@@ -187,7 +299,7 @@ def reset_user_state():
     }
     st.session_state.onboarding_finished = False
     st.session_state.watchlist = []
-    st.session_state.selected_avatar = "👨"
+    st.session_state.selected_avatar = "Masculino"
 
 # ============================================
 # TRADUCCIONES
@@ -271,7 +383,7 @@ T = {
     "err_user_exists": {"en": "This email is already registered.", "es": "Este correo ya está registrado."},
     "err_invalid_creds": {"en": "Invalid email or password.", "es": "Correo o contraseña incorrectos."},
     "reg_success": {"en": "Account created successfully! Please log in.", "es": "¡Cuenta creada exitosamente! Por favor inicia sesión."},
-    "choose_avatar": {"en": "Choose your Avatar", "es": "Elige tu Avatar"},
+    "choose_gender": {"en": "Gender", "es": "Género"},
     "err_service_down": {"en": "🛠️ The service is temporarily unavailable. Please try again in a few minutes.", "es": "🛠️ El servicio no está disponible en este momento. Intenta de nuevo en unos minutos."},
     "err_weak_password": {"en": "Password must be at least 6 characters.", "es": "La contraseña debe tener al menos 6 caracteres."},
     "err_invalid_email": {"en": "Please enter a valid email address.", "es": "Por favor ingresa un correo válido."},
@@ -601,8 +713,8 @@ def format_description(description, max_lines=5, max_chars_per_line=85):
 # UI AUTH & NOTICE
 # ============================================
 def show_auth_screen():
-    st.markdown(f"<h2 style='text-align: center; color: #0a3d6b;'>{t('auth_title')}</h2>", unsafe_allow_html=True)
-    st.markdown(f"<p style='text-align: center; color: #666;'>{t('auth_subtitle')}</p>", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='text-align: center; color: #253355;'>{t('auth_title')}</h2>", unsafe_allow_html=True)
+    st.markdown(f"<p style='text-align: center; color: rgba(37, 51, 85, 0.65);'>{t('auth_subtitle')}</p>", unsafe_allow_html=True)
     tab_login, tab_register = st.tabs([t("login_tab"), t("register_tab")])
     
     with tab_login:
@@ -644,33 +756,19 @@ def show_auth_screen():
                         st.error(t("reset_error"))
                 
     with tab_register:
-        # Selector de género/avatar
-        st.markdown(f"**{t('choose_avatar')}:**")
+        # Selector de género (Masculino / Femenino)
+        st.markdown(f"**{t('choose_gender')}:**")
         
-        # Fila 1: Hombres
-        col_h1, col_h2 = st.columns(2)
-        with col_h1:
-            btn_1 = "primary" if st.session_state.selected_avatar == "👨" else "secondary"
-            if st.button("👨", key="reg_av_1", type=btn_1, width="stretch"):
-                st.session_state.selected_avatar = "👨"
+        col_m, col_f = st.columns(2)
+        with col_m:
+            btn_m = "primary" if st.session_state.selected_avatar == "Masculino" else "secondary"
+            if st.button("♂  Masculino", key="reg_gender_m", type=btn_m, width="stretch"):
+                st.session_state.selected_avatar = "Masculino"
                 st.rerun()
-        with col_h2:
-            btn_2 = "primary" if st.session_state.selected_avatar == "🧔" else "secondary"
-            if st.button("🧔", key="reg_av_2", type=btn_2, width="stretch"):
-                st.session_state.selected_avatar = "🧔"
-                st.rerun()
-        
-        # Fila 2: Mujeres
-        col_m1, col_m2 = st.columns(2)
-        with col_m1:
-            btn_3 = "primary" if st.session_state.selected_avatar == "👩" else "secondary"
-            if st.button("👩", key="reg_av_3", type=btn_3, width="stretch"):
-                st.session_state.selected_avatar = "👩"
-                st.rerun()
-        with col_m2:
-            btn_4 = "primary" if st.session_state.selected_avatar == "👱‍♀️" else "secondary"
-            if st.button("👱‍♀️", key="reg_av_4", type=btn_4, width="stretch"):
-                st.session_state.selected_avatar = "👱‍♀️"
+        with col_f:
+            btn_f = "primary" if st.session_state.selected_avatar == "Femenino" else "secondary"
+            if st.button("♀  Femenino", key="reg_gender_f", type=btn_f, width="stretch"):
+                st.session_state.selected_avatar = "Femenino"
                 st.rerun()
         
         st.markdown("---")
@@ -1006,7 +1104,7 @@ def main():
     reset_token = query_params.get("reset_token")
     
     if reset_token:
-        st.markdown("<h1 style='text-align: center; color: #0a3d6b;'>Nivesha - Cambiar Clave</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center; color: #253355;'>Nivesha - Cambiar Clave</h1>", unsafe_allow_html=True)
         email = verify_reset_token(reset_token)
         
         if email:
@@ -1029,8 +1127,8 @@ def main():
     col_logo, col_title = st.columns([3, 7])
     with col_logo: st.image("logo.png", width=450)
     with col_title:
-        st.markdown("<h1 style='color: #0a3d6b; margin-top: 25px;'>Nivesha</h1>", unsafe_allow_html=True)
-        st.markdown(f"<p style='color: #a0a0a0;'>{t('app_subtitle')}</p>", unsafe_allow_html=True)
+        st.markdown("<h1 style='color: #253355; margin-top: 25px;'>Nivesha</h1>", unsafe_allow_html=True)
+        st.markdown(f"<p style='color: rgba(37, 51, 85, 0.55);'>{t('app_subtitle')}</p>", unsafe_allow_html=True)
     st.divider()
     
     if not st.session_state.logged_in:
@@ -1040,8 +1138,16 @@ def main():
         
         # SIDEBAR
         with st.sidebar:
-            # Panel de usuario con Avatar, Nombre y Apellido
-            st.markdown(f"<h3 style='text-align: center;'>{user_data['avatar']} {user_data['first_name']} {user_data['last_name']}</h3>", unsafe_allow_html=True)
+            # Panel de usuario: símbolo de género (♂/♀) + Nombre + Apellido
+            # Compatibilidad: usuarios ya registrados con emoji heredado lo siguen viendo
+            avatar_val = user_data.get('avatar', '')
+            if avatar_val == 'Masculino':
+                gender_icon = '♂'
+            elif avatar_val == 'Femenino':
+                gender_icon = '♀'
+            else:
+                gender_icon = avatar_val  # emoji heredado de usuarios ya registrados
+            st.markdown(f"<h3 style='text-align: center;'>{gender_icon} {user_data['first_name']} {user_data['last_name']}</h3>", unsafe_allow_html=True)
             st.caption(f"📧 {user_data['email']}")
             
             if st.button(t("logout"), width="stretch"):
