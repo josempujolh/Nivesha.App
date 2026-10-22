@@ -1124,11 +1124,17 @@ def main():
             st.error("El enlace es inválido o ha expirado. Pide uno nuevo.")
         return # Detiene la app para no mostrar el login normal
     
-    col_logo, col_title = st.columns([3, 7])
-    with col_logo: st.image("logo.png", width=450)
-    with col_title:
-        st.markdown("<h1 style='color: #253355; margin-top: 25px;'>Nivesha</h1>", unsafe_allow_html=True)
-        st.markdown(f"<p style='color: rgba(37, 51, 85, 0.55);'>{t('app_subtitle')}</p>", unsafe_allow_html=True)
+    # Logo centrado y mas pequeno (180px, cerca del tamano nativo 192px del archivo,
+    # para evitar que se vea pixelado). El titulo "Nivesha" se elimina porque ya el
+    # logo identifica la app; el subtitulo va debajo, centrado.
+    col_left, col_center, col_right = st.columns([1, 1, 1])
+    with col_center:
+        st.image("logo.png", width=180)                   # ← logo a 180px (no pixelado, centrado)
+    st.markdown(
+        f"<p style='text-align: center; color: rgba(37, 51, 85, 0.6); "
+        f"font-size: 17px; margin-top: -5px;'>{t('app_subtitle')}</p>",  # ← subtítulo centrado abajo
+        unsafe_allow_html=True
+    )
     st.divider()
     
     if not st.session_state.logged_in:
