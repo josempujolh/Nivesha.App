@@ -1277,7 +1277,7 @@ def main():
                         # línea \n en el label. El CSS del sidebar hace que el
                         # texto completo se vea en gris atenuado (línea 1 = ticker
                         # con emoji lupa, línea 2 = nombre de la compañía).
-                        button_label = f"🔍 {tick}\n{company_name}"
+                        button_label = f"🔍 {tick}  /  {company_name}"
                         if st.button(button_label, key=f"wl_{tick}", width="stretch",
                                      help=company_name):
                             st.session_state.active_ticker = tick
