@@ -1,7 +1,7 @@
 # Configuracion de tema de Nivesha
 [theme]
 primaryColor = "#52b788"
-backgroundColor = "#FFFFFF" (blanco)       - fondo principal de la app
+backgroundColor = "#FFFFFF" (blanco)
 #
 # Tipografia:
 #   La fuente oficial "Elms Sans" se carga via CSS desde Google Fonts CDN.
