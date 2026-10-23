@@ -1,4 +1,16 @@
 # Configuracion de tema de Nivesha
+# Paleta oficial:
+#   #253355 (azul oscuro)  - texto principal y titulos
+#   #52b788 (verde)        - color primario (botones, links, progreso)
+#   #F7CF71 (amarillo)     - acentos y advertencias (override via CSS)
+#   #EBEFFF (azul claro)   - fondo del sidebar y widgets secundarios
+#   #FFFFFF (blanco)       - fondo principal de la app
+#
+# Tipografia:
+#   La fuente oficial "Elms Sans" se carga via CSS desde Google Fonts CDN.
+#   Aqui dejamos "sans serif" como fallback base del tema de Streamlit;
+#   el CSS inyectado en nivesha.py/App.py sobrescribe esto con Elms Sans.
+
 [theme]
 primaryColor = "#52b788"
 backgroundColor = "#FFFFFF"
