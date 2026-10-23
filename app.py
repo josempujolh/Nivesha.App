@@ -29,9 +29,6 @@ st.markdown(
 )
 st.markdown("""
 <style>
-/* Import de respaldo (por si el <link> no cargo, el @import dentro de CSS
-   tambien funciona; debe ir antes que cualquier otra regla CSS). */
-@import url('https://fonts.googleapis.com/css2?family=Elms+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
 
 /* --- Variables de la paleta Nivesha --- */
 :root {
@@ -45,17 +42,17 @@ st.markdown("""
 /* ======================================================== */
 /* --- Tipografia Elms Sans en TODA la app (Nivesha)      --- */
 /* ======================================================== */
-/* Aplicamos Elms Sans de forma SIMPLE: solo font-family.
-   NO overrideamos font-size ni font-weight (eso rompia el
-   renderizado interno de Streamlit en expanders y metricas).
-   El font-family se hereda naturalmente a todos los elementos. */
+/* Aplicamos Elms Sans al body; los elementos internos heredan
+   la fuente naturalmente. Esto evita romper el renderizado
+   interno de Streamlit en expanders y metricas. */
 
-html, body, p, span, div, h1, h2, h3, h4, h5, h6, a, button,
-input, textarea, select, label, li, td, th, table,
-.stMarkdown, .stButton > button, .stTextInput input,
-.stTextArea textarea, .stTabs [data-baseweb="tab"] p,
-section[data-testid="stSidebar"] {
+html, body {
     font-family: 'Elms Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
+/* Inputs pueden no heredar correctamente, asi que los forzamos */
+input, textarea, select {
+    font-family: 'Elms Sans', 'Inter', sans-serif !important;
 }
 
 /* NO tocar elementos monospace (code, pre) - mantener su fuente original */
