@@ -1432,3 +1432,4 @@ def main():
                             st.error(f"Error con la IA: {e}")
 
 if __name__ == "__main__":
+    main()
