@@ -45,56 +45,20 @@ st.markdown("""
 /* ======================================================== */
 /* --- Tipografia Elms Sans en TODA la app (Nivesha)      --- */
 /* ======================================================== */
-/* Aplicamos Elms Sans a todos los elementos. El fallback es
-   'Inter' (sans-serif moderna similar) y despues sans-serif
-   generico, por si Google Fonts no carga. */
+/* Aplicamos Elms Sans de forma SIMPLE: solo font-family.
+   NO overrideamos font-size ni font-weight (eso rompia el
+   renderizado interno de Streamlit en expanders y metricas).
+   El font-family se hereda naturalmente a todos los elementos. */
 
-html, body, p, span, div, button, input, textarea, select,
-label, h1, h2, h3, h4, h5, h6, a, code, pre, table, th, td,
-li, blockquote, .stMarkdown, .stMarkdown > *, .stCode,
-.stTextInput, .stTextInput > *, .stTextArea, .stTextArea > *,
-.stButton, .stButton > button, .stButton > button > p,
-.stSelectbox, .stSelectbox > *, .stNumberInput, .stNumberInput > *,
-.stForm, .stForm > *, .stTabs, .stTabs > *, .stExpander,
-.stExpander > *, .stDataFrame, .stDataFrame > *,
-.stMetric, .stMetric > *, [data-testid="stMetricValue"],
-[data-testid="stMetricLabel"], [data-testid="stMetricDelta"],
-[data-testid="stAlertContainer"], [data-testid="stAlert"] *,
-section[data-testid="stSidebar"], section[data-testid="stSidebar"] *,
-[data-testid="stSidebarContent"],
-.stProgress, .stProgress > *, .stProgress > div > div,
-.stImage, .stImage > *, .stCaption, .stCaption > *,
-.stTabs [data-baseweb="tab-list"] [data-baseweb="tab"] p,
-[data-baseweb="notification"], [data-baseweb="toast"] {
+html, body, p, span, div, h1, h2, h3, h4, h5, h6, a, button,
+input, textarea, select, label, li, td, th, table,
+.stMarkdown, .stButton > button, .stTextInput input,
+.stTextArea textarea, .stTabs [data-baseweb="tab"] p,
+section[data-testid="stSidebar"] {
     font-family: 'Elms Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
 }
 
-/* Pesos especificos por contexto */
-h1, [data-testid="stMetricValue"], .stButton > button[kind="primary"] p {
-    font-weight: 700 !important;  /* bold para titulos principales y metricas */
-}
-h2, h3, h4, h5, h6, .stHeader {
-    font-weight: 600 !important;  /* semi-bold para subtitulos */
-}
-.stButton > button p, .stFormSubmitButton > button p,
-section[data-testid="stSidebar"] .stButton > button p {
-    font-weight: 500 !important;  /* medium para botones */
-}
-body, p, .stMarkdown, .stTextInput, .stTextArea, .stSelectbox,
-section[data-testid="stSidebar"] {
-    font-weight: 400 !important;  /* regular para texto del cuerpo */
-}
-
-/* Tamanos de fuente legibles */
-body { font-size: 15px !important; }
-h1 { font-size: 2em !important; }
-h2 { font-size: 1.5em !important; }
-h3 { font-size: 1.25em !important; }
-
-/* Inputs y textareas heredan la fuente */
-input, textarea, select {
-    font-family: 'Elms Sans', 'Inter', sans-serif !important;
-}
+/* NO tocar elementos monospace (code, pre) - mantener su fuente original */
 
 /* --- Advertencias (st.warning) en amarillo Nivesha #F7CF71 --- */
 div[data-testid="stAlert-containerWarning"] {
@@ -186,25 +150,11 @@ h1, h2, h3 {
     color: #253355 !important;
 }
 
-/* --- Botones de Watchlist: ticker arriba, nombre en gris debajo --- */
-/* st.button no soporta HTML, así que usamos \n en el label. Aquí le damos */
-/* estilo al <p> interno del botón para que se vea alineado a la izquierda, */
-/* con interlineado ajustado y en gris atenuado (rgba 0.7) para que el ticker */
-/* (línea 1 con emoji lupa) se distinga visualmente del nombre (línea 2).    */
-section[data-testid="stSidebar"] .stButton > button p {
-    white-space: pre-line !important;
-    line-height: 1.3 !important;
-    text-align: left !important;
-    font-size: 13px !important;
-    color: rgba(37, 51, 85, 0.7) !important;
-    font-weight: 500 !important;
-}
-section[data-testid="stSidebar"] .stButton > button:hover p {
-    color: rgba(37, 51, 85, 0.9) !important;
-}
-/* La columna 1 (botón del ticker) no debe estirarse verticalmente */
+/* --- Botones de Watchlist: 1 linea con separador "  /  " --- */
+/* Solo ajustamos padding y alineacion. NO overrideamos font-size ni
+   font-weight (ya viene del font-family de Elms Sans arriba). */
 section[data-testid="stSidebar"] .stButton > button {
-    height: auto !important;
+    text-align: left !important;
     padding: 6px 10px !important;
 }
 
@@ -641,19 +591,29 @@ def get_company_description(symbol):
     except: return None
 
 @st.cache_data(ttl=86400)
+def get_company_name_cached(symbol):
+    """Cache SOLO resultados exitosos (non-None).
+    Si yfinance falla o no encuentra el nombre, lanza excepcion
+    para que @st.cache_data NO cachee el None (y reintente en la
+    siguiente carga de la app)."""
+    info = yf.Ticker(symbol).info
+    name = info.get("shortName") or info.get("longName")
+    if not name:
+        raise ValueError(f"Nombre no encontrado para {symbol}")
+    return name
+
 def get_company_name(symbol):
-    """Devuelve el nombre corto de la compañía o None si no lo encuentra.
-    Cache de 24h para no martillear yfinance en cada carga de la app."""
+    """Wrapper: retorna el nombre de la compania o None si falla.
+    Los fallos NO se cachean, asi que se reintentan en cada carga."""
     try:
-        info = yf.Ticker(symbol).info
-        return info.get("shortName") or info.get("longName")
+        return get_company_name_cached(symbol)
     except Exception:
         return None
 
 def format_watchlist_label(ticker):
-    """Devuelve el nombre de la compañía formateado para mostrar debajo del ticker.
-    - Corta a 25 caracteres + '...' si es más largo.
-    - Devuelve '(N/D)' si yfinance no encontró el nombre."""
+    """Devuelve el nombre de la compania formateado para mostrar junto al ticker.
+    - Corta a 25 caracteres + '...' si es mas largo.
+    - Devuelve '(N/D)' si yfinance no encontro el nombre."""
     name = get_company_name(ticker)
     if not name:
         return "(N/D)"
