@@ -122,6 +122,28 @@ h1, h2, h3 {
     color: #253355 !important;
 }
 
+/* --- Botones de Watchlist: ticker arriba, nombre en gris debajo --- */
+/* st.button no soporta HTML, así que usamos \n en el label. Aquí le damos */
+/* estilo al <p> interno del botón para que se vea alineado a la izquierda, */
+/* con interlineado ajustado y en gris atenuado (rgba 0.7) para que el ticker */
+/* (línea 1 con emoji lupa) se distinga visualmente del nombre (línea 2).    */
+section[data-testid="stSidebar"] .stButton > button p {
+    white-space: pre-line !important;
+    line-height: 1.3 !important;
+    text-align: left !important;
+    font-size: 13px !important;
+    color: rgba(37, 51, 85, 0.7) !important;
+    font-weight: 500 !important;
+}
+section[data-testid="stSidebar"] .stButton > button:hover p {
+    color: rgba(37, 51, 85, 0.9) !important;
+}
+/* La columna 1 (botón del ticker) no debe estirarse verticalmente */
+section[data-testid="stSidebar"] .stButton > button {
+    height: auto !important;
+    padding: 6px 10px !important;
+}
+
 /* --- Acento amarillo en el divider de la cabecera --- */
 hr {
     border-color: rgba(247, 207, 113, 0.6) !important;
@@ -553,6 +575,27 @@ def get_company_description(symbol):
         info = yf.Ticker(symbol).info
         return info.get("longBusinessSummary") or info.get("businessSummary") or None
     except: return None
+
+@st.cache_data(ttl=86400)
+def get_company_name(symbol):
+    """Devuelve el nombre corto de la compañía o None si no lo encuentra.
+    Cache de 24h para no martillear yfinance en cada carga de la app."""
+    try:
+        info = yf.Ticker(symbol).info
+        return info.get("shortName") or info.get("longName")
+    except Exception:
+        return None
+
+def format_watchlist_label(ticker):
+    """Devuelve el nombre de la compañía formateado para mostrar debajo del ticker.
+    - Corta a 25 caracteres + '...' si es más largo.
+    - Devuelve '(N/D)' si yfinance no encontró el nombre."""
+    name = get_company_name(ticker)
+    if not name:
+        return "(N/D)"
+    if len(name) > 25:
+        return name[:25] + "..."
+    return name
 
 def get_data_av(sym):
     try:
@@ -1225,9 +1268,19 @@ def main():
             if not st.session_state.watchlist: st.info(t("empty_list"))
             else:
                 for tick in st.session_state.watchlist:
-                    col1, col2 = st.columns([3, 1])
+                    col1, col2 = st.columns([4, 1])
                     with col1:
-                        if st.button(f"🔍 {tick}", key=f"wl_{tick}", width="stretch"): st.session_state.active_ticker = tick
+                        # Resolver el nombre de la compañía (cacheado 24h)
+                        company_name = format_watchlist_label(tick)
+                        # Botón con ticker arriba + nombre de la compañía abajo.
+                        # st.button no soporta HTML, así que usamos un salto de
+                        # línea \n en el label. El CSS del sidebar hace que el
+                        # texto completo se vea en gris atenuado (línea 1 = ticker
+                        # con emoji lupa, línea 2 = nombre de la compañía).
+                        button_label = f"🔍 {tick}\n{company_name}"
+                        if st.button(button_label, key=f"wl_{tick}", width="stretch",
+                                     help=company_name):
+                            st.session_state.active_ticker = tick
                     with col2:
                         if st.button("❌", key=f"del_{tick}"):
                             st.session_state.watchlist.remove(tick)
