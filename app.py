@@ -21,8 +21,18 @@ st.set_page_config(page_title="Nivesha", page_icon="logo.png", layout="wide")
 # ============================================
 # INJECTION CSS: Colores oficiales de Nivesha
 # ============================================
+# Cargar Elms Sans desde Google Fonts (link tag, el metodo mas confiable en Streamlit).
+# Pesos: 400, 500, 600, 700, 800 (normal) + 400 itálica. ~80 KB total.
+st.markdown(
+    '<link href="https://fonts.googleapis.com/css2?family=Elms+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">',
+    unsafe_allow_html=True
+)
 st.markdown("""
 <style>
+/* Import de respaldo (por si el <link> no cargo, el @import dentro de CSS
+   tambien funciona; debe ir antes que cualquier otra regla CSS). */
+@import url('https://fonts.googleapis.com/css2?family=Elms+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
+
 /* --- Variables de la paleta Nivesha --- */
 :root {
     --nivesha-blue:        #253355;
@@ -30,6 +40,60 @@ st.markdown("""
     --nivesha-yellow:      #F7CF71;
     --nivesha-light-blue:  #EBEFFF;
     --nivesha-white:       #FFFFFF;
+}
+
+/* ======================================================== */
+/* --- Tipografia Elms Sans en TODA la app (Nivesha)      --- */
+/* ======================================================== */
+/* Aplicamos Elms Sans a todos los elementos. El fallback es
+   'Inter' (sans-serif moderna similar) y despues sans-serif
+   generico, por si Google Fonts no carga. */
+
+html, body, p, span, div, button, input, textarea, select,
+label, h1, h2, h3, h4, h5, h6, a, code, pre, table, th, td,
+li, blockquote, .stMarkdown, .stMarkdown > *, .stCode,
+.stTextInput, .stTextInput > *, .stTextArea, .stTextArea > *,
+.stButton, .stButton > button, .stButton > button > p,
+.stSelectbox, .stSelectbox > *, .stNumberInput, .stNumberInput > *,
+.stForm, .stForm > *, .stTabs, .stTabs > *, .stExpander,
+.stExpander > *, .stDataFrame, .stDataFrame > *,
+.stMetric, .stMetric > *, [data-testid="stMetricValue"],
+[data-testid="stMetricLabel"], [data-testid="stMetricDelta"],
+[data-testid="stAlertContainer"], [data-testid="stAlert"] *,
+section[data-testid="stSidebar"], section[data-testid="stSidebar"] *,
+[data-testid="stSidebarContent"],
+.stProgress, .stProgress > *, .stProgress > div > div,
+.stImage, .stImage > *, .stCaption, .stCaption > *,
+.stTabs [data-baseweb="tab-list"] [data-baseweb="tab"] p,
+[data-baseweb="notification"], [data-baseweb="toast"] {
+    font-family: 'Elms Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
+/* Pesos especificos por contexto */
+h1, [data-testid="stMetricValue"], .stButton > button[kind="primary"] p {
+    font-weight: 700 !important;  /* bold para titulos principales y metricas */
+}
+h2, h3, h4, h5, h6, .stHeader {
+    font-weight: 600 !important;  /* semi-bold para subtitulos */
+}
+.stButton > button p, .stFormSubmitButton > button p,
+section[data-testid="stSidebar"] .stButton > button p {
+    font-weight: 500 !important;  /* medium para botones */
+}
+body, p, .stMarkdown, .stTextInput, .stTextArea, .stSelectbox,
+section[data-testid="stSidebar"] {
+    font-weight: 400 !important;  /* regular para texto del cuerpo */
+}
+
+/* Tamanos de fuente legibles */
+body { font-size: 15px !important; }
+h1 { font-size: 2em !important; }
+h2 { font-size: 1.5em !important; }
+h3 { font-size: 1.25em !important; }
+
+/* Inputs y textareas heredan la fuente */
+input, textarea, select {
+    font-family: 'Elms Sans', 'Inter', sans-serif !important;
 }
 
 /* --- Advertencias (st.warning) en amarillo Nivesha #F7CF71 --- */
@@ -1368,4 +1432,3 @@ def main():
                             st.error(f"Error con la IA: {e}")
 
 if __name__ == "__main__":
-    main()
